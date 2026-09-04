@@ -56,7 +56,7 @@ Route::prefix('v1')->group(function(){
             Route::get('/','show');
             Route::put('/','update');
             Route::delete('/','delete');
-            Route::patch('/avatar','updateAvatar');
+            Route::post('/avatar','updateAvatar');
             Route::delete('/avatar','deleteAvatar');
         });
         // *** Users ***

@@ -11,21 +11,24 @@ use Illuminate\Http\Request;
 class CartController extends Controller
 {
     use ApiResponse;
+
     /**
      * Display a listing of the resource.
      */
     public function index(Request $request)
     {
         $user = $request->user();
-        $cart = Cart::query()->firstOrCreate([
-            'user_id'=>$user->id
+        $cart = Cart::firstOrCreate([
+            'user_id' => $user->id
         ]);
 
-        $cart_items = CartItem::where('cart_id', $cart->id)->get();
-        $cart_items->load('variant.product');
+        $cart_items = CartItem::where('cart_id', $cart->id)
+            ->with(['variant.product', 'variant.color', 'variant.size'])
+            ->get();
+
         return $this->successResponse(
             ['cart_items' => $cart_items],
-            'Get cart items',
+            'Get cart items successfully',
             200
         );
     }
@@ -48,7 +51,9 @@ class CartController extends Controller
             'user_id' => $user->id,
         ]);
 
-        $variant = Product_variant::where('product_id', $validatedData['product_id'])
+        // Eager load product relationship
+        $variant = Product_variant::with('product')
+            ->where('product_id', $validatedData['product_id'])
             ->where('color_id', $validatedData['color_id'])
             ->where('size_id', $validatedData['size_id'])
             ->first();
@@ -72,8 +77,9 @@ class CartController extends Controller
             ->where('variant_id', $variant->id)
             ->first();
 
-        if ($cartItem) {
+        $unitPrice = $variant->product->price + ($variant->price_modifier ?? 0);
 
+        if ($cartItem) {
             $newQty = $cartItem->qty + $validatedData['qty'];
 
             if ($newQty > $variant->stock) {
@@ -85,18 +91,14 @@ class CartController extends Controller
 
             $cartItem->update([
                 'qty' => $newQty,
-                'sub_total' => $newQty *
-                    ($variant->product->price + $variant->price_modifier),
+                'sub_total' => $newQty * $unitPrice,
             ]);
         } else {
-
-            $price = $variant->product->price + $variant->price_modifier;
-
             $cartItem = CartItem::create([
-                'cart_id'   => $cart->id,
+                'cart_id'    => $cart->id,
                 'variant_id' => $variant->id,
-                'qty'       => $validatedData['qty'],
-                'sub_total' => $validatedData['qty'] * $price,
+                'qty'        => $validatedData['qty'],
+                'sub_total'  => $validatedData['qty'] * $unitPrice,
             ]);
         }
 
@@ -107,21 +109,27 @@ class CartController extends Controller
         );
     }
 
-
     /**
      * Update the specified resource in storage.
      */
     public function update(Request $request, string $id)
     {
-        $validatedData=$request->validate([
-            'qty'=>"required|integer|min:0"
+        $validatedData = $request->validate([
+            'qty' => 'required|integer|min:0'
         ]);
-        $user=$request->user();
-        $cart=Cart::where('user_id',$user->id)->first();
 
-        $cart_item=CartItem::where('cart_id',$cart->id)->where('id',$id)->first();
+        $user = $request->user();
+        $cart = Cart::where('user_id', $user->id)->first();
 
-        $variant=Product_variant::find($cart_item->variant_id);
+        if (!$cart) {
+            return $this->errorResponse('Cart not found', 404);
+        }
+
+        $cart_item = CartItem::where('cart_id', $cart->id)->where('id', $id)->first();
+
+        if (!$cart_item) {
+            return $this->errorResponse('Cart item not found', 404);
+        }
 
         if ($validatedData['qty'] == 0) {
             $cart_item->delete();
@@ -132,45 +140,61 @@ class CartController extends Controller
                 200
             );
         }
-        if($validatedData['qty']>$variant->stock){
-            return $this->errorResponse('Not enough stock',422);
+
+        $variant = Product_variant::with('product')->find($cart_item->variant_id);
+
+        if (!$variant || $validatedData['qty'] > $variant->stock) {
+            return $this->errorResponse('Not enough stock', 422);
         }
-        $price=$variant->price_modifier+$variant->product->price;
+
+        $price = $variant->product->price + ($variant->price_modifier ?? 0);
         $cart_item->update([
-            'qty'=>$validatedData['qty'],
-            'sub_total'=>$validatedData['qty']*$price
+            'qty' => $validatedData['qty'],
+            'sub_total' => $validatedData['qty'] * $price
         ]);
 
         return $this->successResponse(
-            ['cart_item'=>$cart_item],
+            ['cart_item' => $cart_item],
             'Cart item updated successfully',
             200
         );
-
-
-
     }
 
     /**
      * Remove the specified resource from storage.
      */
-    public function destroy(Request $request,string $id)
+    public function destroy(Request $request, string $id)
     {
-        $user=$request->user();
-        $cart=Cart::where('user_id',$user->id)->first();
+        $user = $request->user();
+        $cart = Cart::where('user_id', $user->id)->first();
 
-        $cart_item=CartItem::where('cart_id',$cart->id)->where('id',$id)->first();
+        if (!$cart) {
+            return $this->errorResponse('Cart not found', 404);
+        }
+
+        $cart_item = CartItem::where('cart_id', $cart->id)->where('id', $id)->first();
+
+        if (!$cart_item) {
+            return $this->errorResponse('Cart item not found', 404);
+        }
+
         $cart_item->delete();
 
-        return $this->successResponse(null,"Cart item deleted successfully",200);
+        return $this->successResponse(null, "Cart item deleted successfully", 200);
     }
 
-    public function clear(Request $request){
-        $user=$request->user();
-        $cart=Cart::where('user_id',$user->id)->first();
-        $cart_item=CartItem::where('cart_id',$cart->id)->delete();
-        $cart_item->delete();
+    /**
+     * Clear all items in cart.
+     */
+    public function clear(Request $request)
+    {
+        $user = $request->user();
+        $cart = Cart::where('user_id', $user->id)->first();
 
-        return $this->successResponse(null,'Cart item cleared successfully',200);
+        if ($cart) {
+            CartItem::where('cart_id', $cart->id)->delete();
+        }
+
+        return $this->successResponse(null, 'Cart items cleared successfully', 200);
     }
 }

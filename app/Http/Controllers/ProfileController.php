@@ -58,8 +58,8 @@ class ProfileController extends Controller
         $user = $request->user();
 
         // ១. លុបរូបចាស់នៅលើ Cloudinary (បើមាន public_id ចាស់)
-        if ($user->avatar_public_id) {
-            Cloudinary::destroy($user->avatar_public_id);
+        if ($user->public_id) {
+            Cloudinary::destroy($user->public_id);
         }
 
         // ២. Upload រូបថ្មីទៅកាន់ Cloudinary
@@ -67,24 +67,25 @@ class ProfileController extends Controller
 
         // ៣. រក្សាទុក Secure URL និង Public ID ក្នុង Database
         $user->avatar_path = $uploadedFile->getSecurePath();
-        $user->avatar_public_id = $uploadedFile->getPublicId(); // គួរមាន column នេះដើម្បីស្រួលលុបថ្ងៃក្រោយ
+        $user->public_id = $uploadedFile->getPublicId(); // គួរមាន column នេះដើម្បីស្រួលលុបថ្ងៃក្រោយ
         $user->save();
 
         return $this->successResponse(['avatar' => $user->avatar_path], 'Avatar updated successfully', 200);
     }
 
     public function deleteAvatar(Request $request){
-        $user = $request->user();
+            $user = $request->user();
 
-        // លុបរូបភាពពី Cloudinary
-        if ($user->avatar_public_id) {
-            Cloudinary::destroy($user->avatar_public_id);
-        }
+            // ១. លុបរូបភាពពី Cloudinary
+            if ($user->public_id) {
+                Cloudinary::destroy($user->public_id);
+            }
 
-        $user->avatar_path = null;
-        $user->avatar_public_id = null;
-        $user->save();
+            // ២. កំណត់តម្លៃទៅជា null វិញក្នុង Database
+            $user->avatar_path = null;
+            $user->public_id = null;
+            $user->save();
 
-        return $this->successResponse(null, 'Avatar deleted successfully', 200);
+            return $this->successResponse(null, 'Avatar deleted successfully', 200);
     }
 }
