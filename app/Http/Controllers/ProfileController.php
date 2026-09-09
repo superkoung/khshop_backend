@@ -13,7 +13,7 @@ class ProfileController extends Controller
     use ApiResponse;
 
     public function show(Request $request){
-        $user = $request->user();
+        $user = $request->user()->load('role');
 
         return $this->successResponse($user, 'profile user', 200);
     }

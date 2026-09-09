@@ -15,7 +15,7 @@ return new class extends Migration
     DB::statement('ALTER TABLE categories ALTER COLUMN parent_id TYPE INTEGER USING parent_id::integer;');
 
         Schema::table('categories', function (Blueprint $table) {
-            $table->int('parent_id')->nullable()->change();
+            $table->integer('parent_id')->nullable()->change();
         });
     }
 

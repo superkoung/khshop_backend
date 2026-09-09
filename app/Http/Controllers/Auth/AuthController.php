@@ -62,31 +62,82 @@ class AuthController extends Controller
         }
 
     }
-    public function login(LoginRequest $request){
-        $validatedData=$request->validated();
+    // public function login(LoginRequest $request){
+    //     $validatedData=$request->validated();
 
-        try{
-            $user=User::where('email',$validatedData['email'])->first();
-            if(!$user || !Hash::check($validatedData['password'],$user->password)){
-                return $this->errorResponse('Invalid email or password',401);
+    //     try{
+    //         $user=User::where('email',$validatedData['email'])->first();
+    //         if(!$user || !Hash::check($validatedData['password'],$user->password)){
+    //             return $this->errorResponse('Invalid email or password',401);
+    //         }
+    //         if(!$user->is_active){
+    //             return $this->errorResponse('Your account is not active or verified yet',403);
+    //         }
+    //         $token=$user->createToken('auth_token')->plainTextToken;
+
+    //         return $this->successResponse(
+    //             [
+    //                 'token'=>$token,
+    //                 'token_type'=>'bearer'
+    //             ],'Login successfully!',200
+    //         );
+
+    //     }catch(\Exception $e){
+    //         return $this->errorResponse('Login failed',500,$e->getMessage());
+    //     }
+
+    // }
+
+    public function login(LoginRequest $request)
+    {
+        $validatedData = $request->validated();
+
+        try {
+            $user = User::with('role')
+                ->where('email', $validatedData['email'])
+                ->first();
+
+            if (!$user || !Hash::check($validatedData['password'], $user->password)) {
+                return $this->errorResponse(
+                    'Invalid email or password',
+                    401
+                );
             }
-            if(!$user->is_active){
-                return $this->errorResponse('Your account is not active or verified yet',403);
+
+            if (!$user->is_active) {
+                return $this->errorResponse(
+                    'Your account is not active or verified yet',
+                    403
+                );
             }
-            $token=$user->createToken('auth_token')->plainTextToken;
+
+            $token = $user->createToken('auth_token')->plainTextToken;
 
             return $this->successResponse(
                 [
-                    'token'=>$token,
-                    'token_type'=>'bearer'
-                ],'Login successfully!',200
+                    'token' => $token,
+                    'token_type' => 'bearer',
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role->name,
+                    ],
+                ],
+                'Login successfully!',
+                200
             );
 
-        }catch(\Exception $e){
-            return $this->errorResponse('Login failed',500,$e->getMessage());
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Login failed',
+                500,
+                $e->getMessage()
+            );
         }
-
     }
+
+
     public function logout(Request $request){
         $request->user()->currentAccessToken()->delete();
         return $this->successResponse(null,'Logout Successfully!',200);

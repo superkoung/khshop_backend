@@ -20,8 +20,9 @@ class Product_variant extends Model
         'sku'
     ];
 
-    public function images(){
-        return $this->hasMany(Image::class,'variant_id');
+    public function image()
+    {
+        return $this->belongsTo(Image::class, 'image_id');
     }
 
     public function cartItems(){

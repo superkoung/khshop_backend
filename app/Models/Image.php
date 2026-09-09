@@ -11,7 +11,8 @@ class Image extends Model
 
     protected $table = 'product_images';
 
-    public function variant(){
-        return $this->belongsTo(Product_variant::class,'variant_id');
+    public function variants()
+    {
+        return $this->hasMany(Product_variant::class, 'image_id');
     }
 }

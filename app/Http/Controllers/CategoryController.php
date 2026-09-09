@@ -150,16 +150,27 @@ class CategoryController extends Controller
     }
 
     // api front end
-    public function getNavMenu(){
-        $menus=Category::query()->whereNull('parent_id')->select('id','name','slug','description','image_path')
-                            ->with('children',function($q){
-                                $q->select('id','name','slug','description','parent_id');
-                            })->get();
-        return $this->successResponse(
-            ['menus'=>$menus],
-            'Get Navbar menu',
-            200
-        );
-    }
+    public function getNavMenu()
+{
+    $menus = Category::query()
+        ->whereNull('parent_id')
+        ->select('id', 'name', 'slug')
+        ->with([
+            'banner' => function ($b) {
+                $b->select('id', 'menu_id', 'title','description', 'image_path');
+            },
+            'children' => function ($q) {
+                $q->select('id', 'name', 'slug', 'parent_id', 'image_path')
+                  ->get();
+            }
+        ])
+        ->get();
+
+    return $this->successResponse(
+        ['menus' => $menus],
+        'Get Navbar menu',
+        200
+    );
+}
 
 }

@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\Product_variant;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -17,69 +18,191 @@ class ProductController extends Controller
     /**
      * Display a listing of the resource.
      */
+
     public function index(Request $request)
     {
-        // products
-        $query=Product::with(['variants.images']);
-        // menu
-        if($request->filled('menuSlug')){
-            $parentCategory=Category::where('slug',$request->menuSlug)->first();
-            $childCategory=Category::where('parent_id',$parentCategory->id)->pluck('id');
-            $query->whereIn('category_id',$childCategory);
-        }
-        // search
-        if($request->filled('search')){
-            $query->where('name','like','%'.$request->search.'%');
-        }
-        // category
-        if($request->filled('selectedCategories')){
-            $categoryId=Category::where('slug',$request->categorySlug)->first();
-            $query->where('category_id',$categoryId->id);
-        }
-        //​​​ size
-        if($request->filled('selectedSizes')){
-            $size=(array) $request->selectedSizes;
-            $query->whereHas('variants',function($q) use ($size){
-                $q->whereIn('size_id',$size);
-            });
-        }
-        // color
-        if ($request->filled('selectedColors')) {
-            $colors = (array) $request->color_id;
-            $query->whereHas('variants', function ($q) use ($colors) {
-                $q->whereIn('color_id', $colors);
-            });
-        }
-        // min price
-        if ($request->filled('min_price')) {
-            $query->where('price', '>=', $request->min_price);
-        }
-        // max price
-        if ($request->filled('max_price')) {
-            $query->where('price', '<=', $request->max_price);
-        }
-        // sort
-        if ($request->filled('sort')) {
-            if ($request->sort === 'price_low_high') {
-                $query->orderBy('price', 'asc');
-            } elseif ($request->sort === 'price_high_low') {
-                $query->orderBy('price', 'desc');
-            } elseif ($request->sort === 'new_arrival') {
-                $query->latest();
+    // Products
+    $query = Product::query()
+        ->select(
+            'id',
+            'name',
+            'slug',
+            'price',
+            'discount_type',
+            'discount_value',
+            'sale_price',
+            'is_active'
+        )
+
+        // Count unique colors
+        ->withCount([
+            'variants as total_colors' => function ($v) {
+                $v->select(DB::raw('count(distinct color_id)'));
             }
+        ])
+
+        // Load variants + image
+        ->with([
+            'variants' => function ($v) {
+                $v->select(
+                    'id',
+                    'product_id',
+                    'color_id',
+                    'size_id',
+                    'image_id',
+                    'price_modifier',
+                    'stock'
+                )
+                ->with([
+                    'image',
+                    'color',
+                    'size',
+                ]);
+            }
+        ])
+
+        ->where('is_active', true)
+        ->latest();
+
+    // =========================================================
+    // Menu
+    // =========================================================
+
+    if ($request->filled('menuSlug')) {
+
+        $parentCategory = Category::where(
+            'slug',
+            $request->menuSlug
+        )->first();
+
+        if ($parentCategory) {
+
+            $childCategory = Category::where(
+                'parent_id',
+                $parentCategory->id
+            )->pluck('id');
+
+            $query->whereIn('category_id', $childCategory);
         }
+    }
 
-        $products=$query->get();
+    // =========================================================
+    // Search
+    // =========================================================
 
-        return $this->successResponse(
-            [
-                'products'=>$products,
-            ],
-            'Get products data',
-            200
+    if ($request->filled('search')) {
+        $query->where(
+            'name',
+            'like',
+            '%' . $request->search . '%'
         );
     }
-       public function getFilter(Request $request){
+
+    // =========================================================
+    // Category
+    // =========================================================
+
+    if ($request->filled('selectedCategories')) {
+
+        $categoryId = Category::where(
+            'slug',
+            $request->categorySlug
+        )->first();
+
+        if ($categoryId) {
+            $query->where(
+                'category_id',
+                $categoryId->id
+            );
+        }
+    }
+
+    // =========================================================
+    // Size
+    // =========================================================
+
+    if ($request->filled('selectedSizes')) {
+
+        $size = (array) $request->selectedSizes;
+
+        $query->whereHas('variants', function ($q) use ($size) {
+            $q->whereIn('size_id', $size);
+        });
+    }
+
+    // =========================================================
+    // Color
+    // =========================================================
+
+    if ($request->filled('selectedColors')) {
+
+        $colors = (array) $request->selectedColors;
+
+        $query->whereHas('variants', function ($q) use ($colors) {
+            $q->whereIn('color_id', $colors);
+        });
+    }
+
+    // =========================================================
+    // Min Price
+    // =========================================================
+
+    if ($request->filled('min_price')) {
+        $query->where(
+            'price',
+            '>=',
+            $request->min_price
+        );
+    }
+
+    // =========================================================
+    // Max Price
+    // =========================================================
+
+    if ($request->filled('max_price')) {
+        $query->where(
+            'price',
+            '<=',
+            $request->max_price
+        );
+    }
+
+    // =========================================================
+    // Sort
+    // =========================================================
+
+    if ($request->filled('sort')) {
+
+        if ($request->sort === 'price_low_high') {
+
+            $query->orderBy('price', 'asc');
+
+        } elseif ($request->sort === 'price_high_low') {
+
+            $query->orderBy('price', 'desc');
+
+        } elseif ($request->sort === 'new_arrival') {
+
+            $query->latest();
+        }
+    }
+
+    // =========================================================
+    // Get Products
+    // =========================================================
+
+    $products = $query->get();
+
+    return $this->successResponse(
+        [
+            'products' => $products,
+        ],
+        'Get products data',
+        200
+    );
+}
+
+    public function getFilter(Request $request){
         $sizes=null;
         $colors=null;
         $brands=null;
