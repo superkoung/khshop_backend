@@ -294,45 +294,65 @@ class ProductController extends Controller
     /**
      * Display the specified resource.
      */
+
     public function show(string $slug)
     {
-        // 1. Get product + variants
+        // =========================================================
+        // 1. Get product + variants + color + size + image
+        // =========================================================
+
         $product = Product::with([
             'variants.color',
             'variants.size',
-            'variants.images',
+            'variants.image',
         ])
         ->where('slug', $slug)
         ->firstOrFail();
 
 
+        // =========================================================
         // 2. Group variants by color
+        // =========================================================
+
         $colors = $product->variants
             ->groupBy('color_id');
 
 
+        // =========================================================
         // 3. Convert each color group
+        // =========================================================
+
         $colors = $colors->map(function ($variants) {
 
             // Get color information
             $color = $variants->first()->color;
 
 
+            // =====================================================
             // Get images
-            $images = $variants
-                ->flatMap(function ($variant) {
+            // =====================================================
 
-                    return $variant->images
-                        ->pluck('image_path');
+            $images = $variants
+                ->map(function ($variant) {
+
+                    return $variant->image;
 
                 })
-                ->unique()
+                ->filter()
+                ->unique('id')
                 ->values();
 
 
+            // =====================================================
             // Get sizes
+            // =====================================================
+
             $sizes = $variants
                 ->map(function ($variant) {
+
+                    if (!$variant->size) {
+                        return null;
+                    }
 
                     return [
                         'id' => $variant->size->id,
@@ -342,10 +362,14 @@ class ProductController extends Controller
                     ];
 
                 })
+                ->filter()
                 ->values();
 
 
+            // =====================================================
             // Return one color
+            // =====================================================
+
             return [
                 'id' => $color->id,
                 'name' => $color->name,
@@ -357,7 +381,10 @@ class ProductController extends Controller
         ->values();
 
 
+        // =========================================================
         // 4. Final response
+        // =========================================================
+
         return response()->json([
             'id' => $product->id,
             'name' => $product->name,
@@ -365,6 +392,8 @@ class ProductController extends Controller
             'colors' => $colors,
         ]);
     }
+
+
 
     /**
      * Update the specified resource in storage.

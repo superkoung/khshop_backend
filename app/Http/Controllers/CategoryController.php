@@ -100,7 +100,6 @@ class CategoryController extends Controller
         );
 
     }
-
     /**
      * Remove the specified resource from storage.
      */
@@ -148,29 +147,47 @@ class CategoryController extends Controller
         $category->forceDelete();
         return $this->successResponse(null,'Category permanently deleted',200);
     }
-
     // api front end
     public function getNavMenu()
-{
-    $menus = Category::query()
-        ->whereNull('parent_id')
-        ->select('id', 'name', 'slug')
-        ->with([
-            'banner' => function ($b) {
-                $b->select('id', 'menu_id', 'title','description', 'image_path');
-            },
-            'children' => function ($q) {
-                $q->select('id', 'name', 'slug', 'parent_id', 'image_path')
-                  ->get();
-            }
-        ])
-        ->get();
+    {
+        $menus = Category::query()
+            ->whereNull('parent_id')
+            ->select(
+                'id',
+                'name',
+                'slug'
+            )
+            ->with([
+                // Menu Banner
+                'banner' => function ($b) {
+                    $b->select(
+                        'id',
+                        'menu_id',
+                        'title',
+                        'description',
+                        'image_path'
+                    );
+                },
 
-    return $this->successResponse(
-        ['menus' => $menus],
-        'Get Navbar menu',
-        200
-    );
-}
+                // Child Categories
+                'children' => function ($q) {
+                    $q->select(
+                        'id',
+                        'name',
+                        'slug',
+                        'parent_id',
+                        'image_path'
+                    );
+                },
+            ])
+            ->get();
 
+        return $this->successResponse(
+            [
+                'menus' => $menus,
+            ],
+            'Get Navbar menu',
+            200
+        );
+    }
 }

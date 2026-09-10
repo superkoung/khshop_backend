@@ -14,15 +14,20 @@ return new class extends Migration
         Schema::create('reviews', function (Blueprint $table) {
             $table->id();
 
-            $table->foreignId('product_id')->constrained('products')->cascadeOnDelete();
-            $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('product_id')
+                ->constrained('products')
+                ->cascadeOnDelete();
 
-            // Details
-            $table->unsignedTinyInteger('rating'); // ទុកលេខ 1 ដល់ 5
-            $table->text('comment')->nullable();   // មតិយោបល់ (អាចទទេបាន បើគេឱ្យតែផ្កាយ)
+            $table->foreignId('user_id')
+                ->constrained('users')
+                ->cascadeOnDelete();
+
+            $table->text('comment');
 
             $table->timestamps();
-            });
+
+            $table->unique(['user_id', 'product_id']);
+        });
     }
 
     /**

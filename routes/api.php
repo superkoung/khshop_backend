@@ -8,10 +8,13 @@ use App\Http\Controllers\BrandController;
 use App\Http\Controllers\CartController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\HomeController;
+use App\Http\Controllers\OrderController;
 use App\Http\Controllers\Product_variantController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\wishlistController;
 use Illuminate\Support\Facades\Route;
 
 // |=======================|
@@ -139,12 +142,44 @@ Route::prefix('v1')->group(function(){
     // *** Cart
     Route::middleware('auth:sanctum')->group(function(){
         Route::controller(CartController::class)->prefix('cart')->group(function(){
+            Route::post('/merge','merge');
+
             Route::get('/','index');
             Route::post('/','store');
             Route::patch('/{id}','update');
-            Route::delete('/{id}','delete');
+            Route::delete('/{id}','destroy');
             Route::delete('/','clear');
         });
+    });
+
+    // *** Wishlist ***
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(wishlistController::class)->prefix('wishlist')->group(function () {
+                Route::get('/', 'index');
+                Route::post('/', 'store');
+                Route::post('/merge', 'merge');
+                Route::delete('/{id}', 'destroy');
+                Route::delete('/', 'clear');
+        });
+    });
+    // *** Order ***
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(OrderController::class)->prefix('order')->group(function () {
+                Route::get('/', 'index');
+                Route::post('/', 'store');
+                Route::get('/{id}', 'show');
+                Route::patch('/{id}/cancel', 'cancel');
+            });
+    });
+
+    //review
+    // Public
+    Route::get('/products/{productId}/reviews',[ReviewController::class, 'index']);
+    // Protected
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/products/{productId}/reviews',[ReviewController::class, 'store']);
+        Route::patch('/reviews/{id}',[ReviewController::class, 'update']);
+        Route::delete('/reviews/{id}',[ReviewController::class, 'destroy']);
     });
 });
 

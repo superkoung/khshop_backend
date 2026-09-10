@@ -38,4 +38,7 @@ class Product_variant extends Model
     public function size(){
         return $this->belongsTo(Size::class,'size_id');
     }
+    public function orderItems(){
+        return $this->hasMany(OrderItem::class);
+    }
 }

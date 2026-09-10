@@ -18,20 +18,34 @@ class CartController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
+
+        // Get or create user's cart
         $cart = Cart::firstOrCreate([
-            'user_id' => $user->id
+            'user_id' => $user->id,
         ]);
 
-        $cart_items = CartItem::where('cart_id', $cart->id)
-            ->with(['variant.product', 'variant.color', 'variant.size'])
+        // Get cart items
+        $cartItems = CartItem::query()
+            ->where('cart_id', $cart->id)
+            ->with([
+                'variant.product',
+                'variant.color',
+                'variant.size',
+                'variant.image',
+            ])
             ->get();
 
         return $this->successResponse(
-            ['cart_items' => $cart_items],
+            [
+                'cart' => $cart,
+                'cart_items' => $cartItems,
+            ],
             'Get cart items successfully',
             200
         );
     }
+
+
 
     /**
      * Store a newly created resource in storage.
@@ -47,11 +61,12 @@ class CartController extends Controller
 
         $user = $request->user();
 
+        // Get or create user's cart
         $cart = Cart::firstOrCreate([
             'user_id' => $user->id,
         ]);
 
-        // Eager load product relationship
+        // Find selected variant
         $variant = Product_variant::with('product')
             ->where('product_id', $validatedData['product_id'])
             ->where('color_id', $validatedData['color_id'])
@@ -65,6 +80,14 @@ class CartController extends Controller
             );
         }
 
+        // Check product status
+        if (!$variant->product || !$variant->product->is_active) {
+            return $this->errorResponse(
+                'Product is not available',
+                422
+            );
+        }
+
         // Check stock
         if ($validatedData['qty'] > $variant->stock) {
             return $this->errorResponse(
@@ -73,15 +96,20 @@ class CartController extends Controller
             );
         }
 
+        // Check if this variant already exists in cart
         $cartItem = CartItem::where('cart_id', $cart->id)
             ->where('variant_id', $variant->id)
             ->first();
 
-        $unitPrice = $variant->product->price + ($variant->price_modifier ?? 0);
+        // Calculate current unit price
+        $unitPrice = $variant->product->price
+            + ($variant->price_modifier ?? 0);
 
         if ($cartItem) {
+
             $newQty = $cartItem->qty + $validatedData['qty'];
 
+            // Check total quantity against stock
             if ($newQty > $variant->stock) {
                 return $this->errorResponse(
                     'Not enough stock',
@@ -90,20 +118,32 @@ class CartController extends Controller
             }
 
             $cartItem->update([
-                'qty' => $newQty,
+                'qty'       => $newQty,
                 'sub_total' => $newQty * $unitPrice,
             ]);
+
         } else {
+
             $cartItem = CartItem::create([
                 'cart_id'    => $cart->id,
                 'variant_id' => $variant->id,
                 'qty'        => $validatedData['qty'],
-                'sub_total'  => $validatedData['qty'] * $unitPrice,
+                'sub_total' => $validatedData['qty'] * $unitPrice,
             ]);
         }
 
+        // Load relationships for frontend response
+        $cartItem->load([
+            'variant.product',
+            'variant.color',
+            'variant.size',
+            'variant.image',
+        ]);
+
         return $this->successResponse(
-            ['cart_item' => $cartItem],
+            [
+                'cart_item' => $cartItem,
+            ],
             'Product added to cart successfully',
             201
         );
@@ -196,5 +236,89 @@ class CartController extends Controller
         }
 
         return $this->successResponse(null, 'Cart items cleared successfully', 200);
+    }
+
+    public function merge(Request $request)
+    {
+        $validatedData = $request->validate([
+            'items' => 'required|array',
+            'items.*.variant_id' => 'required|exists:product_variants,id',
+            'items.*.qty' => 'required|integer|min:1',
+        ]);
+
+        $user = $request->user();
+
+        $cart = Cart::firstOrCreate([
+            'user_id' => $user->id,
+        ]);
+
+        foreach ($validatedData['items'] as $item) {
+
+            $variant = Product_variant::with('product')
+                ->find($item['variant_id']);
+
+            // Variant not found / product not available
+            if (!$variant || !$variant->product || !$variant->product->is_active) {
+                continue;
+            }
+
+            // No stock
+            if ($variant->stock <= 0) {
+                continue;
+            }
+
+            $cartItem = CartItem::where('cart_id', $cart->id)
+                ->where('variant_id', $variant->id)
+                ->first();
+
+            $currentQty = $cartItem?->qty ?? 0;
+
+            $newQty = $currentQty + $item['qty'];
+
+            // Prevent quantity from exceeding stock
+            if ($newQty > $variant->stock) {
+                $newQty = $variant->stock;
+            }
+
+            $unitPrice = $variant->product->price
+                + ($variant->price_modifier ?? 0);
+
+            $subTotal = $newQty * $unitPrice;
+
+            if ($cartItem) {
+
+                $cartItem->update([
+                    'qty' => $newQty,
+                    'sub_total' => $subTotal,
+                ]);
+
+            } else {
+
+                CartItem::create([
+                    'cart_id' => $cart->id,
+                    'variant_id' => $variant->id,
+                    'qty' => $newQty,
+                    'sub_total' => $subTotal,
+                ]);
+            }
+        }
+
+        $cartItems = CartItem::where('cart_id', $cart->id)
+            ->with([
+                'variant.product',
+                'variant.color',
+                'variant.size',
+                'variant.image',
+            ])
+            ->get();
+
+        return $this->successResponse(
+            [
+                'cart' => $cart,
+                'cart_items' => $cartItems,
+            ],
+            'Guest cart merged successfully',
+            200
+        );
     }
 }

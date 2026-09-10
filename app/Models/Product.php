@@ -30,4 +30,10 @@ class Product extends Model
     public function brand(){
         return $this->belongsTo(Brand::class);
     }
+    public function wishlists(){
+        return $this->hasMany(Wishlist::class);
+    }
+    public function reviews(){
+        return $this->hasMany(Review::class);
+    }
 }
