@@ -14,35 +14,35 @@ class wishlistController extends Controller
     /**
      * Display user's wishlist.
      */
-public function index(Request $request)
-{
-    $user = $request->user();
+    public function index(Request $request)
+    {
+        $user = $request->user();
 
-    $wishlists = Wishlist::query()
-        ->where('user_id', $user->id)
-        ->with([
-            'product',
-            'product.variants' => function ($query) {
-                $query->with([
-                    'color',
-                    'size',
-                    'image',
-                ])
-                ->orderBy('id')
-                ->limit(1);
-            },
-        ])
-        ->latest()
-        ->get();
+        $wishlists = Wishlist::query()
+            ->where('user_id', $user->id)
+            ->with([
+                'product',
+                'product.variants' => function ($query) {
+                    $query->with([
+                        'color',
+                        'size',
+                        'image',
+                    ])
+                    ->orderBy('id')
+                    ->limit(1);
+                },
+            ])
+            ->latest()
+            ->get();
 
-    return $this->successResponse(
-        [
-            'wishlists' => $wishlists,
-        ],
-        'Get wishlist successfully',
-        200
-    );
-}
+        return $this->successResponse(
+            [
+                'wishlists' => $wishlists,
+            ],
+            'Get wishlist successfully',
+            200
+        );
+    }
 
     /**
      * Add product to wishlist.

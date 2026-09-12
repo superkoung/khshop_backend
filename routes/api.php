@@ -112,18 +112,21 @@ Route::prefix('v1')->group(function(){
     // });
     // *** products
     // Route::middleware('auth:sanctum')->group(function(){
-        Route::controller(ProductController::class)->prefix('product')->group(function(){
-            // api frontend
-            Route::get('/filter','getFilter');
 
-            Route::get('/','index');
-            Route::post('/','store');
-            Route::get('/trash','trashed');
-            Route::get('/{brand}','show');
-            Route::patch('/{brand}','update');
-            Route::delete('/{brand}','destroy');
-            Route::patch('/{brand}/restore','restore');
-            Route::delete('/{brand}/force-delete','forceDelete');
+        Route::controller(ProductController::class)->prefix('product')->group(function () {
+                Route::post('/filter', 'getFilter');
+                Route::post('/list', 'index');
+
+                Route::post('/', 'store');
+                Route::get('/trash', 'trashed');
+                Route::patch('/{id}/restore', 'restore');
+                Route::delete('/{id}/force-delete', 'forceDelete');
+
+
+                Route::get('/{slug}', 'show');
+
+                Route::patch('/{id}', 'update');
+                Route::delete('/{id}', 'destroy');
         });
     // });
     // *** product variants

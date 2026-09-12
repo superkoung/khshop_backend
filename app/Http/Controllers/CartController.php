@@ -44,9 +44,6 @@ class CartController extends Controller
             200
         );
     }
-
-
-
     /**
      * Store a newly created resource in storage.
      */
@@ -55,7 +52,7 @@ class CartController extends Controller
         $validatedData = $request->validate([
             'product_id' => 'required|exists:products,id',
             'color_id'   => 'required|exists:colors,id',
-            'size_id'    => 'required|exists:sizes,id',
+            'size_id'    => 'nullable|exists:sizes,id',
             'qty'        => 'required|integer|min:1',
         ]);
 
@@ -67,11 +64,17 @@ class CartController extends Controller
         ]);
 
         // Find selected variant
-        $variant = Product_variant::with('product')
+        $variantQuery = Product_variant::with('product')
             ->where('product_id', $validatedData['product_id'])
-            ->where('color_id', $validatedData['color_id'])
-            ->where('size_id', $validatedData['size_id'])
-            ->first();
+            ->where('color_id', $validatedData['color_id']);
+
+        if (!empty($validatedData['size_id'])) {
+            $variantQuery->where('size_id', $validatedData['size_id']);
+        } else {
+            $variantQuery->whereNull('size_id');
+        }
+
+        $variant = $variantQuery->first();
 
         if (!$variant) {
             return $this->errorResponse(
