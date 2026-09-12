@@ -9,6 +9,7 @@ use App\Models\Product_variant;
 use App\Models\Size;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -150,7 +151,9 @@ class CategoryController extends Controller
     // api front end
     public function getNavMenu()
     {
-        $menus = Category::query()
+
+        $menus=Cache::remember('nav_menu',3600,function(){
+            return Category::query()
             ->whereNull('parent_id')
             ->select(
                 'id',
@@ -181,6 +184,7 @@ class CategoryController extends Controller
                 },
             ])
             ->get();
+        });
 
         return $this->successResponse(
             [
