@@ -16,9 +16,23 @@ use Illuminate\Support\Str;
 class CategoryController extends Controller
 {
     use ApiResponse;
-    public function index()
+    public function index(Request $request)
     {
-        $categories=Category::latest()->get();
+        $query = Category::with('children')->whereNull('parent_id')->latest();
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('slug', 'like', "%{$search}%")
+                  ->orWhereHas('children', function ($cq) use ($search) {
+                      $cq->where('name', 'like', "%{$search}%")
+                         ->orWhere('slug', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $categories = $query->get();
 
         return $this->successResponse(
             [
@@ -35,7 +49,8 @@ class CategoryController extends Controller
         $validatedData=$request->validate([
             'name'=>'required|string|max:255',
             'description'=>'sometimes|string',
-            'image_path'=>'sometimes|required|image|mimes:png,jpg,webp|max:2048'
+            'parent_id'=>'sometimes|nullable|integer|exists:categories,id',
+            'image_path'=>'sometimes|image|mimes:png,jpg,webp|max:2048'
         ]);
 
         $validatedData['slug']=Str::slug($validatedData['name']);
@@ -80,8 +95,9 @@ class CategoryController extends Controller
         $validatedData=$request->validate([
             'name'=>'sometimes|required|string|max:255',
             'description'=>'sometimes|string',
+            'parent_id'=>'sometimes|nullable|integer|exists:categories,id',
             'image_path'=>'sometimes|image|mimes:png,jpg,webp|max:2048',
-            'is_active'=>'sometime|required|boolean'
+            'is_active'=>'sometimes|boolean'
         ]);
 
         if(isset($validatedData['name'])){

@@ -11,27 +11,54 @@ class HomeController extends Controller
 {
     public function index(Request $request)
     {
-        // 1. បង្កើត Integer Sanitized Page Numbers
-        $pageNew = (int) $request->get('page_new', $request->get('page', 1));
-        $pageSpecial = (int) $request->get('page_special', $request->get('page', 1));
+        // =========================================================
+        // Homepage banners (cache 24 ម៉ោង - ព័ត៌មានស្ថិតស្ថេរខ្លាំង)
+        // =========================================================
 
-        // 2. Banners (Cache 1 ថ្ងៃ ប្រើ Tag 'banners')
-        $banners = Cache::tags(['banners', 'homepage'])->remember('home_banners', 86400, function () {
+        $banners = Cache::remember('homepage_banners', now()->addDay(), function () {
             return Banner::query()
                 ->whereNull('menu_id')
                 ->where('is_active', true)
                 ->get();
         });
 
-        // 3. New Arrivals (Cache 1 ម៉ោង ប្រើ Tag 'products')
-        $newArrivals = Cache::tags(['products', 'homepage'])->remember("home_new_arrivals_p{$pageNew}", 3600, function () use ($pageNew) {
-            return $this->getPaginatedProducts('latest', $pageNew);
-        });
+        // =========================================================
+        // New Arrivals (cache 6 ម៉ោង - តាម page)
+        // =========================================================
 
-        // 4. Special Products (Cache 1 ម៉ោង ប្រើ Tag 'products')
-        $specialProducts = Cache::tags(['products', 'homepage'])->remember("home_special_products_p{$pageSpecial}", 3600, function () use ($pageSpecial) {
-            return $this->getPaginatedProducts('special', $pageSpecial);
-        });
+        $newArrivalsPage = $request->input('new_arrivals_page', 1);
+
+        $newArrivals = Cache::remember(
+            "new_arrivals_page_{$newArrivalsPage}",
+            now()->addHours(6),
+            function () {
+                return $this->getFormattedProducts(
+                    Product::query()->latest(),
+                    'new_arrivals_page'
+                );
+            }
+        );
+
+        // =========================================================
+        // Special Products (cache 6 ម៉ោង - តាម page)
+        // =========================================================
+
+        $specialProductsPage = $request->input('special_products_page', 1);
+
+        $specialProducts = Cache::remember(
+            "special_products_page_{$specialProductsPage}",
+            now()->addHours(6),
+            function () {
+                return $this->getFormattedProducts(
+                    Product::query()->whereNotNull('discount_type'),
+                    'special_products_page'
+                );
+            }
+        );
+
+        // =========================================================
+        // Response
+        // =========================================================
 
         return response()->json([
             'banners' => $banners,
@@ -40,29 +67,19 @@ class HomeController extends Controller
         ]);
     }
 
-    /**
-     * Helper Function សម្រាប់រៀបចំ Data Product កាត់បន្ថយ Duplicate Code
-     */
-    private function getPaginatedProducts(string $type, int $page)
+    private function getFormattedProducts($query, string $pageName)
     {
-        $query = Product::query()
+        $products = $query
+            ->where('is_active', true)
             ->with([
-                'variants' => function ($query) {
-                    $query->with(['color', 'size', 'image']);
+                'variants' => function ($q) {
+                    $q->with(['color', 'size', 'image']);
                 },
             ])
-            ->where('is_active', true);
-
-        if ($type === 'latest') {
-            $query->latest();
-        } elseif ($type === 'special') {
-            $query->whereNotNull('discount_type');
-        }
-
-        // ប្រើ page query ជាក់ស្តែង
-        $products = $query->paginate(8, ['*'], 'page', $page);
+            ->paginate(8, ['*'], $pageName);
 
         $products->through(function ($product) {
+
             $colors = $product->variants
                 ->pluck('color')
                 ->filter()

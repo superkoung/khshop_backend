@@ -13,6 +13,7 @@ use App\Http\Controllers\Product_variantController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReviewController;
+use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\wishlistController;
 use Illuminate\Support\Facades\Route;
@@ -113,20 +114,28 @@ Route::prefix('v1')->group(function(){
     // *** products
     // Route::middleware('auth:sanctum')->group(function(){
 
-        Route::controller(ProductController::class)->prefix('product')->group(function () {
+        Route::controller(ProductController::class)->group(function () {
+            Route::prefix('product')->group(function(){
                 Route::post('/filter', 'getFilter');
                 Route::post('/list', 'index');
-
-                Route::post('/', 'store');
+                Route::get('/{slug}', 'show');
+            });
+            Route::prefix('admin/product')->group(function(){
+                Route::get('/colors', 'adminColors');
+                Route::get('/sizes', 'adminSizes');
+                Route::get('/brands', 'adminBrands');
+                Route::get('/categories', 'adminCategories');
                 Route::get('/trash', 'trashed');
+                Route::get('/{id}','adminShow');
+                Route::get('/','adminIndex');
+                Route::post('/', 'adminStore');
+                Route::patch('/{id}', 'adminUpdate');
+                Route::delete('/{id}', 'adminDestroy');
                 Route::patch('/{id}/restore', 'restore');
                 Route::delete('/{id}/force-delete', 'forceDelete');
 
+            });
 
-                Route::get('/{slug}', 'show');
-
-                Route::patch('/{id}', 'update');
-                Route::delete('/{id}', 'destroy');
         });
     // });
     // *** product variants
@@ -142,6 +151,16 @@ Route::prefix('v1')->group(function(){
             Route::delete('/{brand}/force-delete','forceDelete');
         });
     // });
+
+    // *** Suppliers
+    Route::controller(SupplierController::class)->prefix('admin/supplier')->group(function(){
+        Route::get('/','index');
+        Route::post('/','store');
+        Route::get('/{id}','show');
+        Route::patch('/{id}','update');
+        Route::delete('/{id}','destroy');
+    });
+
     // *** Cart
     Route::middleware('auth:sanctum')->group(function(){
         Route::controller(CartController::class)->prefix('cart')->group(function(){

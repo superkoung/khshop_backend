@@ -11,6 +11,8 @@ class Image extends Model
 
     protected $table = 'product_images';
 
+    protected $fillable = ['name', 'image_path', 'public_id', 'is_primary'];
+
     public function variants()
     {
         return $this->hasMany(Product_variant::class, 'image_id');

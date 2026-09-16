@@ -14,9 +14,11 @@ class Product_variant extends Model
         'product_id',
         'size_id',
         'color_id',
+        'image_id',
         'stock',
         'price_modifier',
         'is_active',
+        'is_default',
         'sku'
     ];
 

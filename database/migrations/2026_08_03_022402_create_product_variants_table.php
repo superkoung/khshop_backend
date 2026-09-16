@@ -21,9 +21,8 @@ return new class extends Migration
             // Product Details
             $table->string('sku')->unique()->nullable();
             $table->integer('stock')->default(0);
-            $table->decimal('price_modifier', 10, 2)->default(0.00); // ឬប្រៀបធៀបជា price ផ្ទាល់
-            $table->boolean('is_active')->default(true); // ឬ enum(['active', 'inactive'])
-
+            $table->decimal('price_modifier', 10, 2)->default(0.00);
+            $table->boolean('is_active')->default(true); 
             $table->softDeletes();
             $table->timestamps();
         });

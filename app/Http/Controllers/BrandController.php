@@ -16,12 +16,19 @@ class BrandController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        $brands=Brand::latest()->paginate(10);
+        $query = Brand::latest();
+
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where('name', 'like', "%{$search}%");
+        }
+
+        $brands=$query->paginate($request->integer('per_page', 10));
 
         return $this->successResponse(
-            ['brands'=>BrandResource::collection($brands)],
+            ['brands'=>$brands],
             'Get brands data',
             200
         );
