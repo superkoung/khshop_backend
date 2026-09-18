@@ -22,6 +22,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\BannerController;
 use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserAddressController;
 use App\Http\Controllers\wishlistController;
 use App\Http\Controllers\SystemSettingController;
 use Illuminate\Support\Facades\Route;
@@ -70,6 +71,7 @@ Route::prefix('v1')->group(function(){
             Route::delete('/','delete');
             Route::post('/avatar','updateAvatar');
             Route::delete('/avatar','deleteAvatar');
+            Route::post('/change-password','changePassword');
         });
         // *** Users ***
         Route::controller(UserController::class)->middleware('role:admin,superAdmin')->prefix('user')->group(function(){
@@ -78,6 +80,15 @@ Route::prefix('v1')->group(function(){
             Route::get('/{id}','show');
             Route::patch('/{id}','update');
             Route::delete('/{id}','destroy');
+        });
+        // *** Addresses ***
+        Route::controller(UserAddressController::class)->prefix('addresses')->group(function(){
+            Route::get('/','index');
+            Route::post('/','store');
+            Route::get('/{id}','show');
+            Route::patch('/{id}','update');
+            Route::delete('/{id}','destroy');
+            Route::patch('/{id}/default','setDefault');
         });
     });
     // Home page

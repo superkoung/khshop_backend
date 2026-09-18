@@ -341,6 +341,10 @@ class ProductController extends Controller
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'is_active' => ['nullable', 'boolean'],
 
+            // Supplier
+            'supplier_ids' => ['nullable', 'array'],
+            'supplier_ids.*' => ['integer', 'exists:suppliers,id'],
+
             // Variants
             'variants' => ['required', 'array', 'min:1'],
 
@@ -431,6 +435,10 @@ class ProductController extends Controller
                     ]);
                 }
 
+                if (!empty($validated['supplier_ids'])) {
+                    $product->suppliers()->sync($validated['supplier_ids']);
+                }
+
                 return $product;
             });
 
@@ -438,6 +446,7 @@ class ProductController extends Controller
                 'variants.size',
                 'variants.color',
                 'variants.image',
+                'suppliers',
             ]);
 
             return response()->json([
@@ -518,6 +527,7 @@ class ProductController extends Controller
                 'variants.image',
                 'variants.size',
                 'variants.color',
+                'suppliers',
             ])
             ->withSum('variants as total_stock', 'stock')
             ->findOrFail($id);
@@ -555,6 +565,10 @@ class ProductController extends Controller
             'variants.*.price_modifier' => 'nullable|numeric|min:0',
             'variants.*.is_active' => 'nullable|boolean',
             'variants.*.image' => 'nullable|image|max:5120',
+
+            // Supplier
+            'supplier_ids' => 'sometimes|nullable|array',
+            'supplier_ids.*' => 'integer|exists:suppliers,id',
         ]);
 
         if (isset($validatedData['name'])) {
@@ -626,6 +640,10 @@ class ProductController extends Controller
                         ->delete();
                 }
             }
+
+            if (array_key_exists('supplier_ids', $validatedData)) {
+                $product->suppliers()->sync($validatedData['supplier_ids'] ?? []);
+            }
         });
 
         Cache::flush();
@@ -636,6 +654,7 @@ class ProductController extends Controller
             'variants.image',
             'variants.size',
             'variants.color',
+            'suppliers',
         ]);
 
         return $this->successResponse(

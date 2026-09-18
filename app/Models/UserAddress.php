@@ -5,28 +5,25 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Review extends Model
+class UserAddress extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'user_id',
-        'product_id',
-        'rating',
-        'comment',
+        'receiver_name',
+        'receiver_phone',
+        'address_line',
+        'city_province',
+        'is_default',
     ];
 
     protected $casts = [
-        'rating' => 'integer',
+        'is_default' => 'boolean',
     ];
 
     public function user()
     {
         return $this->belongsTo(User::class);
-    }
-
-    public function product()
-    {
-        return $this->belongsTo(Product::class);
     }
 }

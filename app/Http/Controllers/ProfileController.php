@@ -88,4 +88,23 @@ class ProfileController extends Controller
 
             return $this->successResponse(null, 'Avatar deleted successfully', 200);
     }
+
+    public function changePassword(Request $request){
+        $validatedData = $request->validate([
+            'current_password' => 'required|string',
+            'new_password' => 'required|string|min:8|confirmed',
+        ]);
+
+        $user = $request->user();
+
+        if (!Hash::check($validatedData['current_password'], $user->password)) {
+            return $this->errorResponse('Current password is incorrect.', 422);
+        }
+
+        $user->update([
+            'password' => Hash::make($validatedData['new_password'])
+        ]);
+
+        return $this->successResponse(null, 'Password changed successfully', 200);
+    }
 }

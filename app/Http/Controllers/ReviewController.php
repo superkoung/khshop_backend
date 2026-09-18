@@ -20,8 +20,20 @@ use Illuminate\Http\Request;
             ->latest()
             ->get();
 
+        $stats = [
+            'total' => $reviews->count(),
+            'average' => $reviews->count() > 0 ? round($reviews->avg('rating'), 1) : 0,
+            'distribution' => [
+                5 => $reviews->where('rating', 5)->count(),
+                4 => $reviews->where('rating', 4)->count(),
+                3 => $reviews->where('rating', 3)->count(),
+                2 => $reviews->where('rating', 2)->count(),
+                1 => $reviews->where('rating', 1)->count(),
+            ],
+        ];
+
         return $this->successResponse(
-            ['reviews' => $reviews],
+            ['reviews' => $reviews, 'stats' => $stats],
             'Get product reviews',
             200
         );
@@ -33,7 +45,8 @@ use Illuminate\Http\Request;
     public function store(Request $request, $productId)
     {
         $validatedData = $request->validate([
-            'comment' => 'required|string|min:1|max:1000',
+            'rating'   => 'required|integer|min:1|max:5',
+            'comment'  => 'required|string|min:1|max:1000',
         ]);
 
         $user = $request->user();
@@ -53,9 +66,10 @@ use Illuminate\Http\Request;
         }
 
         $review = Review::create([
-            'user_id' => $user->id,
+            'user_id'    => $user->id,
             'product_id' => $productId,
-            'comment' => $validatedData['comment'],
+            'rating'     => $validatedData['rating'],
+            'comment'    => $validatedData['comment'],
         ]);
 
         $review->load('user:id,name');
@@ -73,7 +87,8 @@ use Illuminate\Http\Request;
     public function update(Request $request, $id)
     {
         $validatedData = $request->validate([
-            'comment' => 'required|string|min:1|max:1000',
+            'rating'  => 'sometimes|required|integer|min:1|max:5',
+            'comment' => 'sometimes|required|string|min:1|max:1000',
         ]);
 
         $user = $request->user();
@@ -82,9 +97,7 @@ use Illuminate\Http\Request;
             ->where('user_id', $user->id)
             ->firstOrFail();
 
-        $review->update([
-            'comment' => $validatedData['comment'],
-        ]);
+        $review->update($validatedData);
 
         $review->load('user:id,name');
 
