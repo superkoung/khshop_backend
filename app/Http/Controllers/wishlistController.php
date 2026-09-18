@@ -28,8 +28,8 @@ class wishlistController extends Controller
                         'size',
                         'image',
                     ])
-                    ->orderBy('id')
-                    ->limit(1);
+                    ->orderByRaw('image_id IS NOT NULL DESC')
+                    ->orderBy('id');
                 },
             ])
             ->latest()

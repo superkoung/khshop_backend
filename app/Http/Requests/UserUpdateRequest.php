@@ -23,11 +23,12 @@ class UserUpdateRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name'=>'sometimes|required|string|max:255',
-            'password'=>'sometimes|required|string|min:8',
-            'role_id'=>'sometimes|required|exists:roles,id',
-            'is_active'=>'sometimes|required|boolean',
-            'email'=>['sometimes','required','email','max:255',Rule::unique('users','email')->whereNull('deleted_at')]
+            'name' => 'sometimes|required|string|max:255',
+            'password' => 'sometimes|required|string|min:8',
+            'phone' => 'sometimes|nullable|string|max:20',
+            'role_id' => 'sometimes|required|exists:roles,id',
+            'is_active' => 'sometimes|required|boolean',
+            'email' => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->whereNull('deleted_at')],
         ];
     }
 }

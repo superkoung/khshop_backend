@@ -14,8 +14,16 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\SupplierController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\AdminOrderController;
+use App\Http\Controllers\AdminCustomerController;
+use App\Http\Controllers\SaleReportController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\BannerController;
+use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\wishlistController;
+use App\Http\Controllers\SystemSettingController;
 use Illuminate\Support\Facades\Route;
 
 // |=======================|
@@ -159,6 +167,85 @@ Route::prefix('v1')->group(function(){
         Route::get('/{id}','show');
         Route::patch('/{id}','update');
         Route::delete('/{id}','destroy');
+    });
+
+    // *** Inventory
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(InventoryController::class)->middleware('role:admin,superAdmin')->prefix('admin/inventory')->group(function(){
+            Route::get('/','index');
+            Route::get('/low-stock','getLowStock');
+            Route::patch('/{id}/stock','updateStock');
+        });
+    });
+
+    // *** Admin Orders
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(AdminOrderController::class)->middleware('role:admin,superAdmin')->prefix('admin/order')->group(function(){
+            Route::get('/','index');
+            Route::get('/{id}','show');
+            Route::patch('/{id}/status','updateStatus');
+            Route::patch('/{id}/cancel','cancel');
+        });
+    });
+
+    // *** Admin Customers
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(AdminCustomerController::class)->middleware('role:admin,superAdmin')->prefix('admin/customer')->group(function(){
+            Route::get('/','index');
+            Route::get('/{id}','show');
+            Route::patch('/{id}/status','updateStatus');
+        });
+    });
+
+    // *** Admin Sale Reports
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(SaleReportController::class)->middleware('role:admin,superAdmin')->prefix('admin/sale-report')->group(function(){
+            Route::get('/data/{period}','getSalesData');
+            Route::get('/chart/{period}','getSalesChart');
+            Route::get('/top-products','getTopProducts');
+            Route::get('/top-customers','getTopCustomers');
+        });
+    });
+
+    // *** Admin Dashboard
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(DashboardController::class)->middleware('role:admin,superAdmin')->prefix('admin/dashboard')->group(function(){
+            Route::get('/','index');
+        });
+    });
+
+    // *** Admin Banners
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(BannerController::class)->middleware('role:admin,superAdmin')->prefix('admin/banner')->group(function(){
+            Route::get('/','index');
+            Route::get('/{id}','show');
+            Route::post('/','store');
+            Route::patch('/{id}','update');
+            Route::delete('/{id}','destroy');
+            Route::patch('/{id}/status','updateStatus');
+        });
+    });
+
+    // *** Admin Collections
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(CollectionController::class)->middleware('role:admin,superAdmin')->prefix('admin/collection')->group(function(){
+            Route::get('/','index');
+            Route::get('/{id}','show');
+            Route::post('/','store');
+            Route::patch('/{id}','update');
+            Route::delete('/{id}','destroy');
+            Route::patch('/{id}/status','updateStatus');
+            Route::post('/{id}/products','assignProducts');
+            Route::delete('/{id}/products/{productId}','removeProduct');
+        });
+    });
+
+    // *** Admin Settings
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(SystemSettingController::class)->middleware('role:admin,superAdmin')->prefix('admin/settings')->group(function(){
+            Route::get('/','index');
+            Route::put('/','update');
+        });
     });
 
     // *** Cart

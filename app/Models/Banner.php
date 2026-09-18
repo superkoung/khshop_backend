@@ -9,6 +9,14 @@ class Banner extends Model
 {
     use HasFactory;
 
+    protected $fillable = [
+        'menu_id',
+        'title',
+        'description',
+        'image_path',
+        'is_active',
+    ];
+
     public function category(){
         return $this->belongsTo(Category::class,'menu_id');
     }
