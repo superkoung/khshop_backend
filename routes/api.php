@@ -131,31 +131,27 @@ Route::prefix('v1')->group(function(){
             Route::delete('/{brand}/force-delete','forceDelete');
         });
     });
-    // *** products
+    // *** products — Public customer routes
+    Route::controller(ProductController::class)->prefix('product')->group(function(){
+        Route::post('/filter', 'getFilter');
+        Route::post('/list', 'index');
+        Route::get('/{slug}', 'show');
+    });
+    // *** products — Protected admin routes
     Route::middleware('auth:sanctum')->group(function(){
-
-        Route::controller(ProductController::class)->group(function () {
-            Route::prefix('product')->group(function(){
-                Route::post('/filter', 'getFilter');
-                Route::post('/list', 'index');
-                Route::get('/{slug}', 'show');
-            });
-            Route::prefix('admin/product')->middleware('role:admin,superAdmin,staff')->group(function(){
-                Route::get('/colors', 'adminColors');
-                Route::get('/sizes', 'adminSizes');
-                Route::get('/brands', 'adminBrands');
-                Route::get('/categories', 'adminCategories');
-                Route::get('/trash', 'trashed');
-                Route::get('/{id}','adminShow');
-                Route::get('/','adminIndex');
-                Route::post('/', 'adminStore');
-                Route::patch('/{id}', 'adminUpdate');
-                Route::delete('/{id}', 'adminDestroy');
-                Route::patch('/{id}/restore', 'restore');
-                Route::delete('/{id}/force-delete', 'forceDelete');
-
-            });
-
+        Route::controller(ProductController::class)->prefix('admin/product')->middleware('role:admin,superAdmin,staff')->group(function(){
+            Route::get('/colors', 'adminColors');
+            Route::get('/sizes', 'adminSizes');
+            Route::get('/brands', 'adminBrands');
+            Route::get('/categories', 'adminCategories');
+            Route::get('/trash', 'trashed');
+            Route::get('/{id}','adminShow');
+            Route::get('/','adminIndex');
+            Route::post('/', 'adminStore');
+            Route::patch('/{id}', 'adminUpdate');
+            Route::delete('/{id}', 'adminDestroy');
+            Route::patch('/{id}/restore', 'restore');
+            Route::delete('/{id}/force-delete', 'forceDelete');
         });
     });
     // *** product variants
