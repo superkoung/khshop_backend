@@ -15,7 +15,8 @@ class UserController extends Controller
 
     public function index(Request $request)
     {
-        $query = User::with('role');
+        $query = User::with('role')
+            ->whereIn('role_id', [2, 3]);
 
         if ($request->filled('search')) {
             $search = $request->input('search');

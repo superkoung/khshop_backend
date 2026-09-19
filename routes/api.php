@@ -101,24 +101,25 @@ Route::prefix('v1')->group(function(){
 
     // *** protected route
     // *** Categories
-    // Route::middleware('auth:sanctum')->group(function(){
-            Route::controller(CategoryController::class)->prefix('category')->group(function(){
-                //end point front end
-                Route::get('/menu','getNavMenu');
-
-                Route::get('/','index');
-                Route::post('/','store');
-                Route::get('/trash','trashed');
-                Route::get('/{id}','show');
-                Route::patch('/{id}','update');
-                Route::delete('/{id}','destroy');
-                Route::patch('/{id}/restore','restore');
-                Route::delete('/{id}/force-delete','forceDelete');
-
-            });
-    // });
+    // Public: navigation menu
+    Route::controller(CategoryController::class)->prefix('category')->group(function(){
+        Route::get('/menu','getNavMenu');
+    });
+    // Protected: CRUD
+    Route::middleware('auth:sanctum')->group(function(){
+        Route::controller(CategoryController::class)->prefix('category')->group(function(){
+            Route::get('/','index');
+            Route::post('/','store');
+            Route::get('/trash','trashed');
+            Route::get('/{id}','show');
+            Route::patch('/{id}','update');
+            Route::delete('/{id}','destroy');
+            Route::patch('/{id}/restore','restore');
+            Route::delete('/{id}/force-delete','forceDelete');
+        });
+    });
     // *** Brands
-    // Route::middleware('auth:sanctum')->group(function(){
+    Route::middleware('auth:sanctum')->group(function(){
         Route::controller(BrandController::class)->prefix('brand')->group(function(){
             Route::get('/','index');
             Route::post('/','store');
@@ -129,9 +130,9 @@ Route::prefix('v1')->group(function(){
             Route::patch('/{brand}/restore','restore');
             Route::delete('/{brand}/force-delete','forceDelete');
         });
-    // });
+    });
     // *** products
-    // Route::middleware('auth:sanctum')->group(function(){
+    Route::middleware('auth:sanctum')->group(function(){
 
         Route::controller(ProductController::class)->group(function () {
             Route::prefix('product')->group(function(){
@@ -139,7 +140,7 @@ Route::prefix('v1')->group(function(){
                 Route::post('/list', 'index');
                 Route::get('/{slug}', 'show');
             });
-            Route::prefix('admin/product')->group(function(){
+            Route::prefix('admin/product')->middleware('role:admin,superAdmin,staff')->group(function(){
                 Route::get('/colors', 'adminColors');
                 Route::get('/sizes', 'adminSizes');
                 Route::get('/brands', 'adminBrands');
@@ -156,9 +157,9 @@ Route::prefix('v1')->group(function(){
             });
 
         });
-    // });
+    });
     // *** product variants
-    // Route::middleware('auth:sanctum')->group(function(){
+    Route::middleware('auth:sanctum')->group(function(){
         Route::controller(Product_variantController::class)->prefix('variant')->group(function(){
             Route::get('/','index');
             Route::post('/','store');
@@ -169,20 +170,22 @@ Route::prefix('v1')->group(function(){
             Route::patch('/{brand}/restore','restore');
             Route::delete('/{brand}/force-delete','forceDelete');
         });
-    // });
+    });
 
     // *** Suppliers
-    Route::controller(SupplierController::class)->prefix('admin/supplier')->group(function(){
-        Route::get('/','index');
-        Route::post('/','store');
-        Route::get('/{id}','show');
-        Route::patch('/{id}','update');
-        Route::delete('/{id}','destroy');
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(SupplierController::class)->middleware('role:admin,superAdmin')->prefix('admin/supplier')->group(function(){
+            Route::get('/','index');
+            Route::post('/','store');
+            Route::get('/{id}','show');
+            Route::patch('/{id}','update');
+            Route::delete('/{id}','destroy');
+        });
     });
 
     // *** Inventory
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(InventoryController::class)->middleware('role:admin,superAdmin')->prefix('admin/inventory')->group(function(){
+        Route::controller(InventoryController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/inventory')->group(function(){
             Route::get('/','index');
             Route::get('/low-stock','getLowStock');
             Route::patch('/{id}/stock','updateStock');
@@ -191,7 +194,7 @@ Route::prefix('v1')->group(function(){
 
     // *** Admin Orders
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(AdminOrderController::class)->middleware('role:admin,superAdmin')->prefix('admin/order')->group(function(){
+        Route::controller(AdminOrderController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/order')->group(function(){
             Route::get('/','index');
             Route::get('/{id}','show');
             Route::patch('/{id}/status','updateStatus');
@@ -201,7 +204,7 @@ Route::prefix('v1')->group(function(){
 
     // *** Admin Customers
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(AdminCustomerController::class)->middleware('role:admin,superAdmin')->prefix('admin/customer')->group(function(){
+        Route::controller(AdminCustomerController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/customer')->group(function(){
             Route::get('/','index');
             Route::get('/{id}','show');
             Route::patch('/{id}/status','updateStatus');
@@ -210,7 +213,7 @@ Route::prefix('v1')->group(function(){
 
     // *** Admin Sale Reports
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(SaleReportController::class)->middleware('role:admin,superAdmin')->prefix('admin/sale-report')->group(function(){
+        Route::controller(SaleReportController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/sale-report')->group(function(){
             Route::get('/data/{period}','getSalesData');
             Route::get('/chart/{period}','getSalesChart');
             Route::get('/top-products','getTopProducts');
@@ -220,7 +223,7 @@ Route::prefix('v1')->group(function(){
 
     // *** Admin Dashboard
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(DashboardController::class)->middleware('role:admin,superAdmin')->prefix('admin/dashboard')->group(function(){
+        Route::controller(DashboardController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/dashboard')->group(function(){
             Route::get('/','index');
         });
     });

@@ -27,7 +27,7 @@ class UserStoreRequest extends FormRequest
             'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->whereNull('deleted_at')],
             'phone' => 'nullable|string|max:20',
             'password' => 'required|min:8|string',
-            'role_id' => 'required|exists:roles,id',
+            'role_id' => 'required|in:2,3',
         ];
     }
 }
