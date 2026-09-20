@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product_variant;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class InventoryController extends Controller
 {
@@ -150,6 +151,8 @@ class InventoryController extends Controller
         ]);
 
         $variant->update(['stock' => $validated['stock']]);
+
+        Cache::flush();
 
         $stock = $variant->stock;
         $status = 'In Stock';

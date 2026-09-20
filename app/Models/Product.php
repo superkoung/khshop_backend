@@ -38,10 +38,6 @@ class Product extends Model
     public function reviews(){
         return $this->hasMany(Review::class);
     }
-    public function collections(){
-        return $this->belongsToMany(Collection::class, 'product_collections')
-                    ->withTimestamps();
-    }
     public function suppliers(){
         return $this->belongsToMany(Supplier::class, 'product_suppliers')
                     ->withPivot('supplier_sku', 'cost_price', 'is_primary')

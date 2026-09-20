@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Order;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class AdminOrderController extends Controller
@@ -125,6 +126,8 @@ class AdminOrderController extends Controller
                         $variant->increment('stock', $item->qty);
                     }
                 }
+
+                Cache::flush();
 
                 $order->update(['status' => 'cancelled']);
 

@@ -20,7 +20,6 @@ use App\Http\Controllers\AdminCustomerController;
 use App\Http\Controllers\SaleReportController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\BannerController;
-use App\Http\Controllers\CollectionController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserAddressController;
 use App\Http\Controllers\wishlistController;
@@ -233,20 +232,6 @@ Route::prefix('v1')->group(function(){
             Route::patch('/{id}','update');
             Route::delete('/{id}','destroy');
             Route::patch('/{id}/status','updateStatus');
-        });
-    });
-
-    // *** Admin Collections
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(CollectionController::class)->middleware('role:admin,superAdmin')->prefix('admin/collection')->group(function(){
-            Route::get('/','index');
-            Route::get('/{id}','show');
-            Route::post('/','store');
-            Route::patch('/{id}','update');
-            Route::delete('/{id}','destroy');
-            Route::patch('/{id}/status','updateStatus');
-            Route::post('/{id}/products','assignProducts');
-            Route::delete('/{id}/products/{productId}','removeProduct');
         });
     });
 

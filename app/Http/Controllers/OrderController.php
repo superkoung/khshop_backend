@@ -6,6 +6,7 @@ use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
@@ -228,6 +229,7 @@ public function index(Request $request)
                     $variant->decrement('stock', $cartItem->qty);
                 }
 
+                Cache::flush();
 
                 /*
                 |--------------------------------------------------------------------------
@@ -378,6 +380,7 @@ public function index(Request $request)
                     }
                 }
 
+                Cache::flush();
 
                 /*
                 |--------------------------------------------------------------------------

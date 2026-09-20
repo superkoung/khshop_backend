@@ -323,6 +323,7 @@ class ProductController extends Controller
             'description' => $product->description,
             'price' => $product->price,
             'colors' => $colors,
+            'total_stock' => $product->variants->sum('stock'),
         ]);
     }
 
