@@ -9,10 +9,14 @@ use App\Models\Color;
 use App\Models\Product;
 use App\Models\Product_variant;
 use App\Models\Size;
+use App\Notifications\ProductNotification;
+use App\Services\NotificationDispatcher;
 use App\Traits\ApiResponse;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -25,9 +29,12 @@ class ProductController extends Controller
         // Cache key តាម filter ដែលបានផ្ញើមក
         // =========================================================
 
+        $perPage = min(max((int) $request->input('per_page', 8), 1), 100);
+        $page    = max((int) $request->input('page', 1), 1);
+
         $cacheKey = 'products_index_' . md5(json_encode($request->all()));
 
-        $products = Cache::remember($cacheKey, now()->addHours(6), function () use ($request) {
+        $paginator = Cache::remember($cacheKey, now()->addHours(6), function () use ($request, $perPage, $page) {
 
             $query = Product::query()
                 ->select(
@@ -100,11 +107,14 @@ class ProductController extends Controller
             }
 
             // =========================================================
-            // Search
+            // Search (case-insensitive — PostgreSQL LIKE is case-sensitive)
             // =========================================================
 
             if ($request->filled('search')) {
-                $query->where('name', 'like', '%' . $request->search . '%');
+                $query->whereRaw(
+                    'LOWER(name) LIKE ?',
+                    ['%' . mb_strtolower(trim((string) $request->search)) . '%']
+                );
             }
 
             // =========================================================
@@ -161,24 +171,30 @@ class ProductController extends Controller
             if ($request->filled('sort')) {
 
                 if ($request->sort === 'price_low_high') {
-                    $query->orderBy('price', 'asc');
+                    $query->orderBy('price', 'asc')->orderBy('id', 'desc');
                 } elseif ($request->sort === 'price_high_low') {
-                    $query->orderBy('price', 'desc');
+                    $query->orderBy('price', 'desc')->orderBy('id', 'desc');
                 } elseif ($request->sort === 'new_arrival') {
-                    $query->latest();
+                    $query->latest()->orderBy('id', 'desc');
                 } else {
-                    $query->latest();
+                    $query->latest()->orderBy('id', 'desc');
                 }
             } else {
-                $query->latest();
+                // Stable tiebreaker so OFFSET pagination never repeats/skips rows
+                // when many products share the same created_at.
+                $query->latest()->orderBy('id', 'desc');
             }
 
-            return $query->get();
+            return $query->paginate($perPage, ['*'], 'page', $page);
         });
 
         return $this->successResponse(
             [
-                'products' => $products,
+                'products'    => $paginator->items(),
+                'currentPage' => $paginator->currentPage(),
+                'totalPages'  => $paginator->lastPage(),
+                'totalCount'  => $paginator->total(),
+                'perPage'     => $paginator->perPage(),
             ],
             'Get products data',
             200
@@ -204,21 +220,43 @@ class ProductController extends Controller
                 // FIX: null check ជៀសវាង error "Attempt to read property 'id' on null"
                 if ($parentCategory) {
 
-                    $childCategoryIds = Category::where('parent_id', $parentCategory->id)->pluck('id');
+                    // Sale uses discount_value > 0 (no category filtering)
+                    // Other menus use child categories
+                    if ($request->menuSlug === 'sale') {
 
-                    $variants = Product_variant::with(['size', 'color'])->whereHas('product', function ($q) use ($childCategoryIds) {
-                        $q->whereIn('category_id', $childCategoryIds);
-                    })->get();
+                        $saleProductQuery = Product::where('is_active', true)->where('discount_value', '>', 0);
 
-                    $sizes = $variants->pluck('size')->filter()->unique('id')->values();
-                    $colors = $variants->pluck('color')->filter()->unique('id')->values();
+                        $variants = Product_variant::with(['size', 'color'])->whereHas('product', function ($q) {
+                            $q->where('is_active', true)->where('discount_value', '>', 0);
+                        })->get();
 
-                    $brands = Brand::whereHas('products', function ($q) use ($childCategoryIds) {
-                        $q->whereIn('category_id', $childCategoryIds);
-                    })->get();
+                        $sizes = $variants->pluck('size')->filter()->unique('id')->values();
+                        $colors = $variants->pluck('color')->filter()->unique('id')->values();
 
-                    $minPrice = Product::whereIn('category_id', $childCategoryIds)->min('price');
-                    $maxPrice = Product::whereIn('category_id', $childCategoryIds)->max('price');
+                        $brands = Brand::whereHas('products', function ($q) {
+                            $q->where('is_active', true)->where('discount_value', '>', 0);
+                        })->get();
+
+                        $minPrice = (clone $saleProductQuery)->min('price');
+                        $maxPrice = (clone $saleProductQuery)->max('price');
+                    } else {
+
+                        $childCategoryIds = Category::where('parent_id', $parentCategory->id)->pluck('id');
+
+                        $variants = Product_variant::with(['size', 'color'])->whereHas('product', function ($q) use ($childCategoryIds) {
+                            $q->whereIn('category_id', $childCategoryIds);
+                        })->get();
+
+                        $sizes = $variants->pluck('size')->filter()->unique('id')->values();
+                        $colors = $variants->pluck('color')->filter()->unique('id')->values();
+
+                        $brands = Brand::whereHas('products', function ($q) use ($childCategoryIds) {
+                            $q->whereIn('category_id', $childCategoryIds);
+                        })->get();
+
+                        $minPrice = Product::whereIn('category_id', $childCategoryIds)->min('price');
+                        $maxPrice = Product::whereIn('category_id', $childCategoryIds)->max('price');
+                    }
                 }
             }
 
@@ -243,6 +281,27 @@ class ProductController extends Controller
                     $minPrice = Product::where('category_id', $category->id)->min('price');
                     $maxPrice = Product::where('category_id', $category->id)->max('price');
                 }
+            }
+
+            // Global catalog (no menu/category) — facets across ALL active products.
+            // Used by /product (All Products + global search).
+            if (!$request->filled('menuSlug') && !$request->filled('categorySlug')) {
+
+                $activeProductQuery = Product::where('is_active', true);
+
+                $variants = Product_variant::with(['size', 'color'])->whereHas('product', function ($q) {
+                    $q->where('is_active', true);
+                })->get();
+
+                $sizes = $variants->pluck('size')->filter()->unique('id')->values();
+                $colors = $variants->pluck('color')->filter()->unique('id')->values();
+
+                $brands = Brand::whereHas('products', function ($q) {
+                    $q->where('is_active', true);
+                })->get();
+
+                $minPrice = (clone $activeProductQuery)->min('price');
+                $maxPrice = (clone $activeProductQuery)->max('price');
             }
 
             return [
@@ -293,18 +352,16 @@ class ProductController extends Controller
             $sizes = $variants
                 ->map(function ($variant) {
 
-                    if (!$variant->size) {
-                        return null;
-                    }
-
+                    // Size-less variants must still be exposed (name/id null) so the
+                    // frontend can resolve their variant_id — required by the guest
+                    // cart merge API after login.
                     return [
-                        'id' => $variant->size->id,
+                        'id' => $variant->size?->id,
                         'variant_id' => $variant->id,
-                        'name' => $variant->size->name,
+                        'name' => $variant->size?->name,
                         'stock' => $variant->stock,
                     ];
                 })
-                ->filter()
                 ->values();
 
             return [
@@ -384,16 +441,28 @@ class ProductController extends Controller
                 'boolean',
             ],
 
-            // Variant image (file upload)
+            // Variant image (file upload) → Cloudinary
             'variants.*.image' => [
                 'nullable',
                 'image',
+                'mimes:jpg,jpeg,png,webp',
                 'max:5120',
             ],
         ]);
 
+        $uploads = [];
         try {
-            $product = DB::transaction(function () use ($validated, $request) {
+            $uploads = $this->uploadVariantImages($request, $validated['variants']);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload product image to Cloudinary.',
+                'error' => $e->getMessage(),
+            ], 502);
+        }
+
+        try {
+            $product = DB::transaction(function () use ($validated, $uploads) {
 
                 $product = Product::create([
                     'name' => $validated['name'],
@@ -411,14 +480,11 @@ class ProductController extends Controller
 
                     $imageId = null;
 
-                    if ($request->hasFile("variants.$index.image")) {
-                        $file = $request->file("variants.$index.image");
-                        $filename = time() . '_' . $index . '.' . $file->getClientOriginalExtension();
-                        $path = $file->storeAs('products', $filename, 'public');
-
+                    if (isset($uploads[$index])) {
                         $imageRecord = Image::create([
-                            'name' => $filename,
-                            'image_path' => '/storage/' . $path,
+                            'name' => $uploads[$index]['name'],
+                            'image_path' => $uploads[$index]['image_path'],
+                            'public_id' => $uploads[$index]['public_id'],
                         ]);
 
                         $imageId = $imageRecord->id;
@@ -442,13 +508,36 @@ class ProductController extends Controller
 
                 return $product;
             });
+        } catch (\Throwable $e) {
+            $this->cleanupCloudinaryUploads($uploads);
 
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create product.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+
+        Cache::flush();
+
+        try {
             $product->load([
                 'variants.size',
                 'variants.color',
                 'variants.image',
                 'suppliers',
             ]);
+
+            NotificationDispatcher::toAdminStaff(new ProductNotification(
+                (int) $product->id,
+                $product->name,
+                'created'
+            ));
+
+            // Stock thresholds on newly created variants (event, not list load).
+            foreach ($product->variants as $variant) {
+                NotificationDispatcher::notifyStockChange($variant);
+            }
 
             return response()->json([
                 'success' => true,
@@ -565,7 +654,7 @@ class ProductController extends Controller
             'variants.*.stock' => 'required_with:variants|integer|min:0',
             'variants.*.price_modifier' => 'nullable|numeric|min:0',
             'variants.*.is_active' => 'nullable|boolean',
-            'variants.*.image' => 'nullable|image|max:5120',
+            'variants.*.image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
 
             // Supplier
             'supplier_ids' => 'sometimes|nullable|array',
@@ -576,76 +665,121 @@ class ProductController extends Controller
             $validatedData['slug'] = Str::slug($validatedData['name']);
         }
 
-        DB::transaction(function () use ($product, $validatedData, $request) {
+        // Upload new images to Cloudinary BEFORE any DB changes.
+        // On failure the existing product/image records remain intact.
+        $uploads = [];
+        if (isset($validatedData['variants'])) {
+            try {
+                $uploads = $this->uploadVariantImages($request, $validatedData['variants']);
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to upload product image to Cloudinary.',
+                    'error' => $e->getMessage(),
+                ], 502);
+            }
+        }
 
-            $product->update(collect($validatedData)->only([
-                'name', 'slug', 'category_id', 'brand_id', 'description',
-                'price', 'discount_type', 'discount_value', 'is_active',
-            ])->toArray());
+        $oldPublicIds = [];
+        $oldImageIds = [];
 
-            if (isset($validatedData['variants'])) {
-                $submittedIds = [];
+        try {
+            DB::transaction(function () use ($product, $validatedData, $uploads, &$oldPublicIds, &$oldImageIds) {
 
-                foreach ($validatedData['variants'] as $index => $variantData) {
+                $product->update(collect($validatedData)->only([
+                    'name', 'slug', 'category_id', 'brand_id', 'description',
+                    'price', 'discount_type', 'discount_value', 'is_active',
+                ])->toArray());
 
-                    $imageId = null;
-                    if ($request->hasFile("variants.$index.image")) {
-                        $file = $request->file("variants.$index.image");
-                        $filename = time() . '_' . $index . '.' . $file->getClientOriginalExtension();
-                        $path = $file->storeAs('products', $filename, 'public');
+                if (isset($validatedData['variants'])) {
+                    $submittedIds = [];
 
-                        $imageRecord = Image::create([
-                            'name' => $filename,
-                            'image_path' => '/storage/' . $path,
-                        ]);
+                    foreach ($validatedData['variants'] as $index => $variantData) {
 
-                        $imageId = $imageRecord->id;
-                    }
+                        $imageId = null;
+                        if (isset($uploads[$index])) {
+                            if (!empty($variantData['id'])) {
+                                $existing = Product_variant::where('id', $variantData['id'])
+                                    ->where('product_id', $product->id)
+                                    ->first();
 
-                    $updateData = [
-                        'size_id' => $variantData['size_id'] ?? null,
-                        'color_id' => $variantData['color_id'] ?? null,
-                        'sku' => $variantData['sku'],
-                        'stock' => $variantData['stock'],
-                        'price_modifier' => $variantData['price_modifier'] ?? 0,
-                        'is_active' => $variantData['is_active'] ?? true,
-                    ];
+                                if ($existing && $existing->image_id) {
+                                    $oldImage = Image::find($existing->image_id);
+                                    if ($oldImage) {
+                                        $oldImageIds[] = $oldImage->id;
+                                        if (!empty($oldImage->public_id)) {
+                                            $oldPublicIds[] = $oldImage->public_id;
+                                        }
+                                    }
+                                }
+                            }
 
-                    if ($imageId !== null) {
-                        $updateData['image_id'] = $imageId;
-                    }
+                            $imageRecord = Image::create([
+                                'name' => $uploads[$index]['name'],
+                                'image_path' => $uploads[$index]['image_path'],
+                                'public_id' => $uploads[$index]['public_id'],
+                            ]);
 
-                    if (!empty($variantData['id'])) {
-                        // Existing variant — update it
-                        $variant = Product_variant::where('id', $variantData['id'])
-                            ->where('product_id', $product->id)
-                            ->first();
-
-                        if ($variant) {
-                            $variant->update($updateData);
-                            $submittedIds[] = $variant->id;
+                            $imageId = $imageRecord->id;
                         }
-                    } else {
-                        // New variant — create it
-                        $newVariant = Product_variant::create(array_merge($updateData, [
-                            'product_id' => $product->id,
-                        ]));
-                        $submittedIds[] = $newVariant->id;
+
+                        $updateData = [
+                            'size_id' => $variantData['size_id'] ?? null,
+                            'color_id' => $variantData['color_id'] ?? null,
+                            'sku' => $variantData['sku'],
+                            'stock' => $variantData['stock'],
+                            'price_modifier' => $variantData['price_modifier'] ?? 0,
+                            'is_active' => $variantData['is_active'] ?? true,
+                        ];
+
+                        if ($imageId !== null) {
+                            $updateData['image_id'] = $imageId;
+                        }
+
+                        if (!empty($variantData['id'])) {
+                            // Existing variant — update it
+                            $variant = Product_variant::where('id', $variantData['id'])
+                                ->where('product_id', $product->id)
+                                ->first();
+
+                            if ($variant) {
+                                $variant->update($updateData);
+                                $submittedIds[] = $variant->id;
+                            }
+                        } else {
+                            // New variant — create it
+                            $newVariant = Product_variant::create(array_merge($updateData, [
+                                'product_id' => $product->id,
+                            ]));
+                            $submittedIds[] = $newVariant->id;
+                        }
+                    }
+
+                    // Delete variants that were not submitted
+                    if (!empty($submittedIds)) {
+                        Product_variant::where('product_id', $product->id)
+                            ->whereNotIn('id', $submittedIds)
+                            ->delete();
                     }
                 }
 
-                // Delete variants that were not submitted
-                if (!empty($submittedIds)) {
-                    Product_variant::where('product_id', $product->id)
-                        ->whereNotIn('id', $submittedIds)
-                        ->delete();
+                if (array_key_exists('supplier_ids', $validatedData)) {
+                    $product->suppliers()->sync($validatedData['supplier_ids'] ?? []);
                 }
-            }
+            });
+        } catch (\Throwable $e) {
+            // DB failed — remove any new Cloudinary uploads; keep old assets.
+            $this->cleanupCloudinaryUploads($uploads);
 
-            if (array_key_exists('supplier_ids', $validatedData)) {
-                $product->suppliers()->sync($validatedData['supplier_ids'] ?? []);
-            }
-        });
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update product.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+
+        // DB committed — now safe to remove replaced Cloudinary assets.
+        $this->finalizeReplacedImages($oldPublicIds, $oldImageIds);
 
         Cache::flush();
 
@@ -657,6 +791,16 @@ class ProductController extends Controller
             'variants.color',
             'suppliers',
         ]);
+
+        NotificationDispatcher::toAdminStaff(new ProductNotification(
+            (int) $product->id,
+            $product->name,
+            'updated'
+        ));
+
+        foreach ($product->variants as $variant) {
+            NotificationDispatcher::notifyStockChange($variant);
+        }
 
         return $this->successResponse(
             [
@@ -676,6 +820,92 @@ class ProductController extends Controller
         Cache::flush();
 
         return $this->successResponse(null, 'Product deleted successfully', 200);
+    }
+
+    /**
+     * Upload all present variant image files to Cloudinary before any DB writes.
+     * Returns [index => ['name', 'image_path', 'public_id']].
+     * Throws RuntimeException on any upload failure (caller must cleanup).
+     */
+    private function uploadVariantImages(Request $request, array $variants): array
+    {
+        $uploads = [];
+
+        foreach ($variants as $index => $variantData) {
+            if (!$request->hasFile("variants.$index.image")) {
+                continue;
+            }
+
+            $file = $request->file("variants.$index.image");
+
+            try {
+                $uploaded = $file->storeOnCloudinary('products');
+                $uploads[$index] = [
+                    'name' => $file->getClientOriginalName() ?: ('variant_' . $index),
+                    'image_path' => $uploaded->getSecurePath(),
+                    'public_id' => $uploaded->getPublicId(),
+                ];
+            } catch (\Throwable $e) {
+                Log::error('Cloudinary product image upload failed: ' . $e->getMessage());
+                throw new \RuntimeException('Cloudinary upload failed for variant image.', 0, $e);
+            }
+        }
+
+        return $uploads;
+    }
+
+    /**
+     * Best-effort cleanup of Cloudinary assets after a failed create/update.
+     */
+    private function cleanupCloudinaryUploads(array $uploads): void
+    {
+        foreach ($uploads as $upload) {
+            if (!empty($upload['public_id'])) {
+                try {
+                    Cloudinary::destroy($upload['public_id']);
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to cleanup Cloudinary asset ' . $upload['public_id'] . ': ' . $e->getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * After a successful update: destroy replaced Cloudinary assets and
+     * remove orphaned Image rows no longer referenced by any variant.
+     */
+    private function finalizeReplacedImages(array $oldPublicIds, array $oldImageIds): void
+    {
+        foreach ($oldImageIds as $imageId) {
+            if (Product_variant::where('image_id', $imageId)->exists()) {
+                continue;
+            }
+
+            $image = Image::find($imageId);
+            if (!$image) {
+                continue;
+            }
+
+            if (!empty($image->public_id)) {
+                try {
+                    Cloudinary::destroy($image->public_id);
+                } catch (\Throwable $e) {
+                    Log::warning('Failed to destroy replaced Cloudinary asset ' . $image->public_id . ': ' . $e->getMessage());
+                }
+            }
+
+            $image->delete();
+        }
+
+        // Destroy any public_ids that were not covered by orphaned image rows.
+        $covered = Image::whereIn('id', $oldImageIds)->pluck('public_id')->filter()->all();
+        foreach (array_diff($oldPublicIds, $covered) as $publicId) {
+            try {
+                Cloudinary::destroy($publicId);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to destroy replaced Cloudinary asset ' . $publicId . ': ' . $e->getMessage());
+            }
+        }
     }
 
     public function forceDelete(int $id)

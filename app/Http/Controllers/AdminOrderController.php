@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
+use App\Notifications\OrderStatusNotification;
+use App\Services\NotificationDispatcher;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -78,7 +80,7 @@ class AdminOrderController extends Controller
 
     public function updateStatus(Request $request, int $id)
     {
-        $order = Order::find($id);
+        $order = Order::with('user')->find($id);
 
         if (!$order) {
             return $this->errorResponse('Order not found', 404);
@@ -88,7 +90,22 @@ class AdminOrderController extends Controller
             'status' => 'required|in:pending,processing,shipped,completed,cancelled',
         ]);
 
-        $order->update(['status' => $validated['status']]);
+        $previousStatus = $order->status;
+        $newStatus = $validated['status'];
+
+        $order->update(['status' => $newStatus]);
+
+        // Only notify when the status actually changed (no duplicate on same-status save).
+        if ($previousStatus !== $newStatus) {
+            NotificationDispatcher::toAdminStaffAndCustomer(
+                new OrderStatusNotification(
+                    (int) $order->id,
+                    '#KH' . $order->id,
+                    $newStatus
+                ),
+                $order->user
+            );
+        }
 
         $order->load([
             'user:id,name,email,phone',
@@ -106,7 +123,9 @@ class AdminOrderController extends Controller
     {
         try {
             $order = DB::transaction(function () use ($id) {
-                $order = Order::with('items.variant')->find($id);
+                // Row lock serializes with khqr:expire-pending / customer cancel
+                // so stock is restored by exactly one path.
+                $order = Order::whereKey($id)->lockForUpdate()->first();
 
                 if (!$order) {
                     abort(404, 'Order not found.');
@@ -119,6 +138,8 @@ class AdminOrderController extends Controller
                 if ($order->status === 'completed') {
                     abort(422, 'Cannot cancel a completed order.');
                 }
+
+                $order->load('items.variant');
 
                 foreach ($order->items as $item) {
                     $variant = $item->variant;

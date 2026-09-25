@@ -5,17 +5,14 @@ namespace App\Http\Controllers;
 use App\Http\Resources\BrandResource;
 use App\Models\Brand;
 use App\Traits\ApiResponse;
-use Illuminate\Contracts\Support\ValidatedData;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class BrandController extends Controller
 {
     use ApiResponse;
-    /**
-     * Display a listing of the resource.
-     */
+
     public function index(Request $request)
     {
         $query = Brand::latest();
@@ -34,9 +31,6 @@ class BrandController extends Controller
         );
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
         $validatedData=$request->validate([
@@ -45,7 +39,9 @@ class BrandController extends Controller
         ]);
         $validatedData['slug']=Str::slug($validatedData['name']);
         if(isset($validatedData['image_path'])){
-            $validatedData['image_path']=Storage::disk('public')->putFile('brands',$validatedData['image_path']);
+            $uploaded = $request->file('image_path')->storeOnCloudinary('brands');
+            $validatedData['image_path'] = $uploaded->getSecurePath();
+            $validatedData['public_id'] = $uploaded->getPublicId();
         }
         $brand=Brand::create($validatedData);
         return $this->successResponse(
@@ -53,11 +49,8 @@ class BrandController extends Controller
             'Brand created successfully',
             201
         );
-
     }
-    /**
-     * Display the specified resource.
-     */
+
     public function show(Brand $brand)
     {
         return $this->successResponse(
@@ -67,9 +60,6 @@ class BrandController extends Controller
         );
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, Brand $brand)
     {
         $validatedData=$request->validate([
@@ -77,41 +67,43 @@ class BrandController extends Controller
             'image_path'=>'sometimes|image|mimes:png,jpg,webp|max:2048',
             'is_active'=>'sometimes|required|boolean'
         ]);
-        if(isset($validatedData['image_path'])){
-            if($brand->image_path && Storage::disk('public')->exists($brand->image_path)){
-                Storage::disk('public')->delete($brand->image_path);
-            }
-        }
         if(isset($validatedData['name'])){
             $validatedData['slug']=Str::slug($validatedData['name']);
         }
-       $brand->update($validatedData);
-       return $this->successResponse(
-          ['brand'=>new BrandResource($brand)],
-          'Brand updated successfully',
-          200
-       );
-
+        if(isset($validatedData['image_path'])){
+            if(!empty($brand->public_id)){
+                Cloudinary::destroy($brand->public_id);
+            }
+            $uploaded = $request->file('image_path')->storeOnCloudinary('brands');
+            $validatedData['image_path'] = $uploaded->getSecurePath();
+            $validatedData['public_id'] = $uploaded->getPublicId();
+        }
+        $brand->update($validatedData);
+        return $this->successResponse(
+           ['brand'=>new BrandResource($brand)],
+           'Brand updated successfully',
+           200
+        );
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(Brand $brand)
     {
+        if(!empty($brand->public_id)){
+            Cloudinary::destroy($brand->public_id);
+        }
         $brand->delete();
-
         return $this->successResponse(null,'Brand deleted successfully',200);
     }
+
     public function forceDelete(int $id){
         $brand=Brand::onlyTrashed()->findOrFail($id);
-        if($brand->image_path && Storage::disk('public')->exists($brand->image_path)){
-            Storage::disk('public')->delete($brand->image_path);
+        if(!empty($brand->public_id)){
+            Cloudinary::destroy($brand->public_id);
         }
         $brand->forceDelete();
-
         return $this->successResponse(null,'Brand permanently deleted',200);
     }
+
     public function trashed(){
         $brand=Brand::onlyTrashed()->paginate(10);
         return $this->successResponse(
@@ -120,10 +112,10 @@ class BrandController extends Controller
             200
         );
     }
+
     public function restore(int $id){
         $brand=Brand::onlyTrashed()->findOrFail($id);
         $brand->restore();
-
         return $this->successResponse(
             ['brand'=>$brand],
             'Brand restored successfully',

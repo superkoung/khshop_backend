@@ -2,6 +2,7 @@
 
 namespace App\Exceptions;
 
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
 use Throwable;
 
@@ -44,5 +45,30 @@ class Handler extends ExceptionHandler
         $this->reportable(function (Throwable $e) {
             //
         });
+    }
+
+    /**
+     * Always return JSON 401 for API routes (including Accept: application/pdf exports).
+     */
+    protected function unauthenticated($request, AuthenticationException $exception)
+    {
+        if ($this->isApiRequest($request) || $request->expectsJson()) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
+
+        return parent::unauthenticated($request, $exception);
+    }
+
+    /**
+     * Force JSON error responses on API routes (Accept may be application/pdf).
+     */
+    protected function shouldReturnJson($request, Throwable $e): bool
+    {
+        return $this->isApiRequest($request) || parent::shouldReturnJson($request, $e);
+    }
+
+    private function isApiRequest($request): bool
+    {
+        return $request->is('api/*') || str_starts_with($request->path(), 'api/');
     }
 }

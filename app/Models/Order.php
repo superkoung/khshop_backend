@@ -50,4 +50,12 @@ class Order extends Model
     public function orderItems(){
         return $this->hasMany(OrderItem::class);
     }
+
+    /**
+     * Order has many payment records.
+     */
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
 }

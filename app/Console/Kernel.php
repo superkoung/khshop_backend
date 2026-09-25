@@ -12,7 +12,9 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
-        // $schedule->command('inspire')->hourly();
+        // Authoritative KHQR expiration: cancels pending Bakong orders past
+        // the payment window (BAKONG_PAYMENT_TIMEOUT) and restores stock once.
+        $schedule->command('khqr:expire-pending')->everyMinute();
     }
 
     /**

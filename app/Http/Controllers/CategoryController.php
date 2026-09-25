@@ -10,12 +10,13 @@ use App\Models\Size;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
 
 class CategoryController extends Controller
 {
     use ApiResponse;
+
     public function index(Request $request)
     {
         $query = Category::with('children')->whereNull('parent_id')->latest();
@@ -41,9 +42,6 @@ class CategoryController extends Controller
         );
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
         $validatedData=$request->validate([
@@ -55,7 +53,9 @@ class CategoryController extends Controller
 
         $validatedData['slug']=Str::slug($validatedData['name']);
         if(isset($validatedData['image_path'])){
-            $validatedData['image_path'] =Storage::disk('public')->putFile('categories',$validatedData['image_path']);
+            $uploaded = $request->file('image_path')->storeOnCloudinary('categories');
+            $validatedData['image_path'] = $uploaded->getSecurePath();
+            $validatedData['public_id'] = $uploaded->getPublicId();
         }
         $category=Category::create($validatedData);
         return $this->successResponse(
@@ -63,12 +63,8 @@ class CategoryController extends Controller
                 'category'=>$category
             ],'Category created successfully',201
         );
-
     }
 
-    /**
-     * Display the specified resource.
-     */
     public function show(int $id)
     {
         $category=Category::find($id);
@@ -82,9 +78,6 @@ class CategoryController extends Controller
         );
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, int $id)
     {
         $category=Category::find($id);
@@ -104,10 +97,12 @@ class CategoryController extends Controller
             $validatedData['slug']=Str::slug($validatedData['name']);
         }
         if(isset($validatedData['image_path'])){
-            if($category->image_path && Storage::disk('public')->exists($category->image_path)){
-                Storage::disk('public')->delete($category->image_path);
+            if(!empty($category->public_id)){
+                Cloudinary::destroy($category->public_id);
             }
-            $validatedData['image_path'] =Storage::disk('public')->putFile('categories',$validatedData['image_path']);
+            $uploaded = $request->file('image_path')->storeOnCloudinary('categories');
+            $validatedData['image_path'] = $uploaded->getSecurePath();
+            $validatedData['public_id'] = $uploaded->getPublicId();
         }
         $category->update($validatedData);
         return $this->successResponse(
@@ -115,16 +110,16 @@ class CategoryController extends Controller
                 'category'=>$category
             ],'Category updated successfully',200
         );
-
     }
-    /**
-     * Remove the specified resource from storage.
-     */
+
     public function destroy(int $id)
     {
         $category=Category::find($id);
         if(!$category){
             return $this->errorResponse('Category not found',404);
+        }
+        if(!empty($category->public_id)){
+            Cloudinary::destroy($category->public_id);
         }
         $category->delete();
         return $this->successResponse(null,'Category deleted successfully',200);
@@ -158,16 +153,15 @@ class CategoryController extends Controller
         if(!$category){
              return $this->errorResponse('Category not found',404);
         }
-        if($category->image_path && Storage::disk('public')->exists($category->image_path)){
-                Storage::disk('public')->delete($category->image_path);
+        if(!empty($category->public_id)){
+            Cloudinary::destroy($category->public_id);
         }
         $category->forceDelete();
         return $this->successResponse(null,'Category permanently deleted',200);
     }
-    // api front end
+
     public function getNavMenu()
     {
-
         $menus=Cache::remember('nav_menu',3600,function(){
             return Category::query()
             ->whereNull('parent_id')
@@ -176,8 +170,8 @@ class CategoryController extends Controller
                 'name',
                 'slug'
             )
+            ->orderByRaw("CASE slug WHEN 'women' THEN 1 WHEN 'men' THEN 2 WHEN 'kids' THEN 3 WHEN 'sport' THEN 4 WHEN 'sale' THEN 5 ELSE 6 END")
             ->with([
-                // Menu Banner
                 'banner' => function ($b) {
                     $b->select(
                         'id',
@@ -187,8 +181,6 @@ class CategoryController extends Controller
                         'image_path'
                     );
                 },
-
-                // Child Categories
                 'children' => function ($q) {
                     $q->select(
                         'id',

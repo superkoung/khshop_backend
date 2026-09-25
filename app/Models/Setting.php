@@ -43,15 +43,18 @@ class Setting extends Model
      */
     public static function set(string $key, $value, string $type = 'string', string $group = 'general', ?string $description = null): static
     {
-        return static::updateOrCreate(
-            ['key' => $key],
-            [
-                'value'       => is_bool($value) ? ($value ? '1' : '0') : $value,
-                'type'        => $type,
-                'group'       => $group,
-                'description' => $description,
-            ]
-        );
+        $attributes = [
+            'value' => is_bool($value) ? ($value ? '1' : '0') : $value,
+            'type'  => $type,
+            'group' => $group,
+        ];
+
+        // Preserve existing description when caller does not provide one
+        if ($description !== null) {
+            $attributes['description'] = $description;
+        }
+
+        return static::updateOrCreate(['key' => $key], $attributes);
     }
 
     /**

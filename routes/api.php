@@ -22,8 +22,10 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\BannerController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserAddressController;
+use App\Http\Controllers\BakongPaymentController;
 use App\Http\Controllers\wishlistController;
 use App\Http\Controllers\SystemSettingController;
+use App\Http\Controllers\NotificationController;
 use Illuminate\Support\Facades\Route;
 
 // |=======================|
@@ -104,14 +106,16 @@ Route::prefix('v1')->group(function(){
     Route::controller(CategoryController::class)->prefix('category')->group(function(){
         Route::get('/menu','getNavMenu');
     });
-    // Protected: CRUD
+    // Protected: Staff can read/create/update; Admin/superAdmin can delete
     Route::middleware('auth:sanctum')->group(function(){
-        Route::controller(CategoryController::class)->prefix('category')->group(function(){
+        Route::controller(CategoryController::class)->prefix('category')->middleware('role:admin,superAdmin,staff')->group(function(){
             Route::get('/','index');
             Route::post('/','store');
-            Route::get('/trash','trashed');
             Route::get('/{id}','show');
             Route::patch('/{id}','update');
+        });
+        Route::controller(CategoryController::class)->prefix('category')->middleware('role:admin,superAdmin')->group(function(){
+            Route::get('/trash','trashed');
             Route::delete('/{id}','destroy');
             Route::patch('/{id}/restore','restore');
             Route::delete('/{id}/force-delete','forceDelete');
@@ -138,6 +142,7 @@ Route::prefix('v1')->group(function(){
     });
     // *** products — Protected admin routes
     Route::middleware('auth:sanctum')->group(function(){
+        // Staff can view, create, update products
         Route::controller(ProductController::class)->prefix('admin/product')->middleware('role:admin,superAdmin,staff')->group(function(){
             Route::get('/colors', 'adminColors');
             Route::get('/sizes', 'adminSizes');
@@ -148,8 +153,11 @@ Route::prefix('v1')->group(function(){
             Route::get('/','adminIndex');
             Route::post('/', 'adminStore');
             Route::patch('/{id}', 'adminUpdate');
-            Route::delete('/{id}', 'adminDestroy');
             Route::patch('/{id}/restore', 'restore');
+        });
+        // Only admin/superAdmin can delete products
+        Route::controller(ProductController::class)->prefix('admin/product')->middleware('role:admin,superAdmin')->group(function(){
+            Route::delete('/{id}', 'adminDestroy');
             Route::delete('/{id}/force-delete', 'forceDelete');
         });
     });
@@ -169,11 +177,15 @@ Route::prefix('v1')->group(function(){
 
     // *** Suppliers
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(SupplierController::class)->middleware('role:admin,superAdmin')->prefix('admin/supplier')->group(function(){
+        // Staff can view, create, edit suppliers
+        Route::controller(SupplierController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/supplier')->group(function(){
             Route::get('/','index');
             Route::post('/','store');
             Route::get('/{id}','show');
             Route::patch('/{id}','update');
+        });
+        // Only admin/superAdmin can delete suppliers
+        Route::controller(SupplierController::class)->middleware('role:admin,superAdmin')->prefix('admin/supplier')->group(function(){
             Route::delete('/{id}','destroy');
         });
     });
@@ -206,13 +218,19 @@ Route::prefix('v1')->group(function(){
         });
     });
 
-    // *** Admin Sale Reports
+    // *** Admin Sale Reports — Admin only
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(SaleReportController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/sale-report')->group(function(){
+        Route::controller(SaleReportController::class)->middleware('role:admin,superAdmin')->prefix('admin/sale-report')->group(function(){
             Route::get('/data/{period}','getSalesData');
             Route::get('/chart/{period}','getSalesChart');
             Route::get('/top-products','getTopProducts');
+            Route::get('/product-report','getProductReport');
             Route::get('/top-customers','getTopCustomers');
+            Route::get('/profit-loss','getProfitLoss');
+            Route::get('/export/sales','exportSales');
+            Route::get('/export/profit-loss','exportProfitLoss');
+            Route::get('/export/product-report','exportProductReport');
+            Route::get('/export/top-customers','exportTopCustomers');
         });
     });
 
@@ -225,13 +243,17 @@ Route::prefix('v1')->group(function(){
 
     // *** Admin Banners
     Route::middleware('auth:sanctum')->group(function () {
-        Route::controller(BannerController::class)->middleware('role:admin,superAdmin')->prefix('admin/banner')->group(function(){
+        // Staff can view, create, edit banners
+        Route::controller(BannerController::class)->middleware('role:admin,superAdmin,staff')->prefix('admin/banner')->group(function(){
             Route::get('/','index');
             Route::get('/{id}','show');
             Route::post('/','store');
             Route::patch('/{id}','update');
-            Route::delete('/{id}','destroy');
             Route::patch('/{id}/status','updateStatus');
+        });
+        // Only admin/superAdmin can delete banners
+        Route::controller(BannerController::class)->middleware('role:admin,superAdmin')->prefix('admin/banner')->group(function(){
+            Route::delete('/{id}','destroy');
         });
     });
 
@@ -276,6 +298,14 @@ Route::prefix('v1')->group(function(){
             });
     });
 
+    // *** Bakong / KHQR Payment ***
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::controller(BakongPaymentController::class)->prefix('payment/bakong')->group(function () {
+            Route::post('/create', 'create');
+            Route::post('/check', 'check');
+        });
+    });
+
     //review
     // Public
     Route::get('/products/{productId}/reviews',[ReviewController::class, 'index']);
@@ -284,6 +314,15 @@ Route::prefix('v1')->group(function(){
         Route::post('/products/{productId}/reviews',[ReviewController::class, 'store']);
         Route::patch('/reviews/{id}',[ReviewController::class, 'update']);
         Route::delete('/reviews/{id}',[ReviewController::class, 'destroy']);
+    });
+
+    // *** Notifications (auth user sees only their own) ***
+    Route::middleware('auth:sanctum')->prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::get('/unread-count', [NotificationController::class, 'unreadCount']);
+        Route::patch('/read-all', [NotificationController::class, 'markAllAsRead']);
+        Route::patch('/{id}/read', [NotificationController::class, 'markAsRead']);
+        Route::delete('/{id}', [NotificationController::class, 'destroy']);
     });
 });
 

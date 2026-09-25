@@ -11,6 +11,8 @@ class SupplierController extends Controller
 {
     use ApiResponse;
 
+    private const DEFAULT_PER_PAGE = 10;
+
     public function index(Request $request)
     {
         $query = Supplier::query();
@@ -25,7 +27,19 @@ class SupplierController extends Controller
             });
         }
 
-        $suppliers = $query->latest()->get();
+        if ($request->filled('is_active') && $request->is_active !== 'all') {
+            $isActive = $request->is_active === '1' || $request->is_active === 'true';
+            $query->where('is_active', $isActive);
+        }
+
+        $suppliers = $query->latest()
+            ->paginate(
+                $request->integer('per_page', self::DEFAULT_PER_PAGE),
+                ['*'],
+                'page',
+                $request->integer('page', 1)
+            )
+            ->withQueryString();
 
         return $this->successResponse(
             ['suppliers' => $suppliers],

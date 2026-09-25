@@ -8,11 +8,14 @@ use App\Http\Requests\RegisterRequest;
 use App\Models\Otp;
 use App\Models\Role;
 use App\Models\User;
+use App\Notifications\NewCustomerNotification;
+use App\Services\NotificationDispatcher;
 use App\Traits\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\RateLimiter;
 
 class AuthController extends Controller
 {
@@ -51,6 +54,12 @@ class AuthController extends Controller
             });
             DB::commit();
 
+            // Only after successful customer account creation.
+            NotificationDispatcher::toAdminStaff(new NewCustomerNotification(
+                (int) $user->id,
+                $user->name
+            ));
+
             return $this->successResponse([
                 'user'=>$user,
             ],
@@ -88,9 +97,23 @@ class AuthController extends Controller
 
     // }
 
+    /**
+     * Shared customer + admin/staff login with failed-attempt rate limiting.
+     * Max consecutive failures (config auth.login.max_attempts, default 5)
+     * then HTTP 429 for the cooldown (config auth.login.decay_minutes, default 15).
+     * Key: login|{normalized email}|{client IP} — independent per account/IP.
+     */
     public function login(LoginRequest $request)
     {
         $validatedData = $request->validated();
+        $throttleKey = $this->loginThrottleKey($request, $validatedData['email']);
+        $maxAttempts = max(1, (int) config('auth.login.max_attempts', 5));
+        $decaySeconds = max(60, (int) config('auth.login.decay_minutes', 15) * 60);
+
+        // Cooldown active — do not attempt authentication.
+        if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+            return $this->tooManyLoginAttemptsResponse($throttleKey);
+        }
 
         try {
             $user = User::with('role')
@@ -98,6 +121,13 @@ class AuthController extends Controller
                 ->first();
 
             if (!$user || !Hash::check($validatedData['password'], $user->password)) {
+                RateLimiter::hit($throttleKey, $decaySeconds);
+
+                // Attempt #maxAttempts triggers rate limit immediately.
+                if (RateLimiter::tooManyAttempts($throttleKey, $maxAttempts)) {
+                    return $this->tooManyLoginAttemptsResponse($throttleKey);
+                }
+
                 return $this->errorResponse(
                     'Invalid email or password',
                     401
@@ -110,6 +140,8 @@ class AuthController extends Controller
                     403
                 );
             }
+
+            RateLimiter::clear($throttleKey);
 
             $token = $user->createToken('auth_token')->plainTextToken;
 
@@ -137,6 +169,22 @@ class AuthController extends Controller
         }
     }
 
+    private function loginThrottleKey(Request $request, string $email): string
+    {
+        return sprintf('login|%s|%s', strtolower(trim($email)), $request->ip());
+    }
+
+    private function tooManyLoginAttemptsResponse(string $throttleKey)
+    {
+        $retryAfter = max(1, RateLimiter::availableIn($throttleKey));
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Too many failed login attempts. Please try again later.',
+            'errors' => null,
+            'retry_after' => $retryAfter,
+        ], 429)->header('Retry-After', (string) $retryAfter);
+    }
 
     public function logout(Request $request){
         $request->user()->currentAccessToken()->delete();

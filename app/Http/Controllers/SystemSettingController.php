@@ -58,7 +58,7 @@ class SystemSettingController extends Controller
      */
     public function update(Request $request)
     {
-        $validated = $request->validate($this->buildValidationRules());
+        $validated = $request->validate($this->buildValidationRules($request));
 
         $saved = [];
         foreach (self::ALLOWED as $group => $keys) {
@@ -69,7 +69,8 @@ class SystemSettingController extends Controller
                     $value = $this->normalizeValue($raw, $type);
 
                     Setting::set($key, $value, $type, $group);
-                    $saved[$group][$key] = $value;
+                    // Return the same cast shape as GET so the UI can render immediately.
+                    $saved[$group][$key] = $this->castValue($value, $type);
                 } else {
                     $existing = Setting::where('key', $key)->first();
                     $saved[$group][$key] = $existing
@@ -82,7 +83,7 @@ class SystemSettingController extends Controller
         return $this->successResponse($saved, 'Settings updated successfully');
     }
 
-    private function buildValidationRules(): array
+    private function buildValidationRules(?Request $request = null): array
     {
         $rules = [];
 
@@ -109,6 +110,16 @@ class SystemSettingController extends Controller
                     $fieldRules[] = 'nullable';
                     $fieldRules[] = 'boolean';
                 }
+
+                // Frontend sends nested groups: { general: { store_name }, store: { currency }, ... }
+                // Laravel rules are flat keys, so flatten the request first when needed.
+                if ($request !== null && !array_key_exists($key, $request->all())) {
+                    $nested = $request->input($group);
+                    if (is_array($nested) && array_key_exists($key, $nested)) {
+                        $request->merge([$key => $nested[$key]]);
+                    }
+                }
+
                 $rules[$key] = $fieldRules;
             }
         }

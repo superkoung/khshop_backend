@@ -112,4 +112,20 @@ return [
 
     'password_timeout' => 10800,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Login Rate Limiting
+    |--------------------------------------------------------------------------
+    |
+    | Max consecutive failed login attempts before HTTP 429, and how long the
+    | lockout cooldown lasts. Applies to the shared customer + admin/staff
+    | login endpoint (per identifier + IP key).
+    |
+    */
+
+    'login' => [
+        'max_attempts' => (int) env('LOGIN_MAX_ATTEMPTS', 5),
+        'decay_minutes' => (int) env('LOGIN_DECAY_MINUTES', 15),
+    ],
+
 ];

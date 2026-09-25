@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Cart;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\Product_variant;
+use App\Notifications\NewOrderNotification;
+use App\Services\NotificationDispatcher;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -18,15 +21,19 @@ public function index(Request $request)
     {
         $user = $request->user();
 
+        $perPage = min(max((int) $request->query('per_page', 10), 1), 100);
+
         $orders = Order::where('user_id', $user->id)
             ->with([
                 'items.variant.product',
                 'items.variant.color',
                 'items.variant.size',
                 'items.variant.image',
+                // Payment method/status — used by the UI to tell KHQR from COD.
+                'payments:id,order_id,method,status,paid_at,created_at',
             ])
             ->latest()
-            ->paginate(10);
+            ->paginate($perPage);
 
         return response()->json([
             'success' => true,
@@ -42,16 +49,25 @@ public function index(Request $request)
     public function store(Request $request)
     {
         $validatedData = $request->validate([
-            'shipping_address' => 'required|string',
-            'receiver_phone'   => 'required|string|max:20',
+            // Required for delivery; optional/empty for pickup.
+            'shipping_address' => 'required_if:order_type,delivery|nullable|string',
+            'receiver_phone'   => 'required_if:order_type,delivery|nullable|string|max:20',
             'order_type'       => 'required|in:delivery,pickup',
             'note'             => 'nullable|string',
+            // bakong: keep cart until payment is verified. cod/legacy: clear on create.
+            'payment_method'   => 'nullable|in:bakong,cod',
         ]);
+
+        $paymentMethod = $validatedData['payment_method'] ?? 'cod';
+        $orderType = $validatedData['order_type'];
+        // orders.shipping_address / receiver_phone are NOT NULL — store '' for pickup.
+        $shippingAddress = $validatedData['shipping_address'] ?? '';
+        $receiverPhone = $validatedData['receiver_phone'] ?? '';
 
         $user = $request->user();
 
         try {
-            $order = DB::transaction(function () use ($user, $validatedData) {
+            $order = DB::transaction(function () use ($user, $validatedData, $paymentMethod, $orderType, $shippingAddress, $receiverPhone) {
 
                 /*
                 |--------------------------------------------------------------------------
@@ -162,12 +178,12 @@ public function index(Request $request)
                     'tax_amount'      => $taxAmount,
                     'net_amount'      => $netAmount,
 
-                    // Snapshot shipping information
-                    'shipping_address' => $validatedData['shipping_address'],
-                    'receiver_phone'   => $validatedData['receiver_phone'],
+                    // Snapshot shipping information (empty for pickup)
+                    'shipping_address' => $shippingAddress,
+                    'receiver_phone'   => $receiverPhone,
 
                     'status'         => 'pending',
-                    'order_type'     => $validatedData['order_type'],
+                    'order_type'     => $orderType,
                     'payment_status' => 'unpaid',
 
                     'note' => $validatedData['note'] ?? null,
@@ -222,22 +238,41 @@ public function index(Request $request)
 
                     /*
                     |--------------------------------------------------------------------------
-                    | 6. Decrease stock
+                    | 6. Decrease stock (atomic, overselling-safe)
+                    |
+                    | UPDATE ... SET stock = stock - qty WHERE stock >= qty.
+                    | Affected-rows guard re-validates stock against concurrent
+                    | orders so stock can never go negative. Runs once here —
+                    | payment verification never deducts stock again.
                     |--------------------------------------------------------------------------
                     */
 
-                    $variant->decrement('stock', $cartItem->qty);
+                    $affected = Product_variant::whereKey($variant->id)
+                        ->where('stock', '>=', $cartItem->qty)
+                        ->decrement('stock', $cartItem->qty);
+
+                    if (!$affected) {
+                        abort(
+                            422,
+                            "Not enough stock for {$variant->product->name}."
+                        );
+                    }
                 }
 
                 Cache::flush();
 
                 /*
                 |--------------------------------------------------------------------------
-                | 7. Clear cart
+                | 7. Clear cart (COD / legacy only)
+                |
+                | Bakong: order create ≠ payment success. Cart items stay until
+                | BakongPaymentController verifies payment and clears them.
                 |--------------------------------------------------------------------------
                 */
 
-                $cart->cartItems()->delete();
+                if ($paymentMethod !== 'bakong') {
+                    $cart->cartItems()->delete();
+                }
 
 
                 /*
@@ -262,6 +297,19 @@ public function index(Request $request)
             | Success response
             |--------------------------------------------------------------------------
             */
+
+            // Notify after successful commit only (never inside failed txn).
+            NotificationDispatcher::toAdminStaff(new NewOrderNotification(
+                (int) $order->id,
+                '#KH' . $order->id,
+                $order->user->name ?? ''
+            ));
+
+            foreach ($order->items as $item) {
+                if ($item->variant) {
+                    NotificationDispatcher::notifyStockChange($item->variant);
+                }
+            }
 
             return response()->json([
                 'success' => true,
@@ -313,6 +361,8 @@ public function index(Request $request)
                 'items.variant.color',
                 'items.variant.size',
                 'items.variant.image',
+                // Payment method/status — used by the UI to tell KHQR from COD.
+                'payments:id,order_id,method,status,paid_at,created_at',
             ])
             ->find($id);
 
@@ -342,9 +392,12 @@ public function index(Request $request)
 
             $order = DB::transaction(function () use ($user, $id) {
 
+                // Row lock serializes against khqr:expire-pending and payment
+                // verification — stock is restored by exactly one winner.
                 $order = Order::where('user_id', $user->id)
-                    ->with('items')
-                    ->find($id);
+                    ->whereKey($id)
+                    ->lockForUpdate()
+                    ->first();
 
                 if (!$order) {
                     abort(404, 'Order not found.');
@@ -364,14 +417,34 @@ public function index(Request $request)
                     );
                 }
 
+                // Paid orders are never cancellable here (status should already
+                // be processing — defense for any paid+pending state).
+                if ($order->payment_status === 'paid') {
+                    abort(
+                        422,
+                        'This order has been paid and cannot be cancelled.'
+                    );
+                }
+
+                // KHQR/Bakong orders cannot be cancelled manually: stock was
+                // deducted at creation and is released only when the payment
+                // window expires (khqr:expire-pending) — never twice here.
+                if ($order->payments()->where('method', 'bakong')->exists()) {
+                    abort(
+                        422,
+                        'KHQR payment orders cannot be cancelled manually. The order is cancelled automatically if the payment is not completed in time.'
+                    );
+                }
+
 
                 /*
                 |--------------------------------------------------------------------------
-                | Restore stock
+                | Restore stock (COD — once; row lock + status check above
+                | make a second restore impossible)
                 |--------------------------------------------------------------------------
                 */
 
-                foreach ($order->items as $item) {
+                foreach ($order->items()->with('variant')->get() as $item) {
 
                     $variant = $item->variant;
 
